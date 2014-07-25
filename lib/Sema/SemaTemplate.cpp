@@ -838,7 +838,6 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                          AttributeList *Attr,
                          TemplateParameterList *TemplateParams,
                          AccessSpecifier AS, SourceLocation ModulePrivateLoc,
-                         SourceLocation FriendLoc,
                          unsigned NumOuterTemplateParamLists,
                          TemplateParameterList** OuterTemplateParamLists) {
   assert(TemplateParams && TemplateParams->size() > 0 &&
@@ -1124,8 +1123,10 @@ Sema::CheckClassTemplate(Scope *S, unsigned TagSpec, TagUseKind TUK,
                           /* AddToContext = */ false);
     }
 
-    FriendDecl *Friend = FriendDecl::Create(
-        Context, CurContext, NewClass->getLocation(), NewTemplate, FriendLoc);
+    FriendDecl *Friend = FriendDecl::Create(Context, CurContext,
+                                            NewClass->getLocation(),
+                                            NewTemplate,
+                                    /*FIXME:*/NewClass->getLocation());
     Friend->setAccess(AS_public);
     CurContext->addDecl(Friend);
   }
@@ -4336,6 +4337,22 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
   Expr *Arg = ArgIn;
   QualType ArgType = Arg->getType();
 
+  // If our parameter has pointer type, check for a null template value.
+  if (ParamType->isPointerType() || ParamType->isNullPtrType()) {
+    switch (isNullPointerValueTemplateArgument(S, Param, ParamType, Arg)) {
+    case NPV_NullPointer:
+      S.Diag(Arg->getExprLoc(), diag::warn_cxx98_compat_template_arg_null);
+      Converted = TemplateArgument(ParamType, /*isNullPtr*/true);
+      return false;
+
+    case NPV_Error:
+      return true;
+        
+    case NPV_NotNullPointer:
+      break;
+    }
+  }
+
   bool AddressTaken = false;
   SourceLocation AddrOpLoc;
   if (S.getLangOpts().MicrosoftExt) {
@@ -4423,33 +4440,6 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
       Arg = subst->getReplacement()->IgnoreImpCasts();
   }
 
-  DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Arg);
-  ValueDecl *Entity = DRE ? DRE->getDecl() : nullptr;
-
-  // If our parameter has pointer type, check for a null template value.
-  if (ParamType->isPointerType() || ParamType->isNullPtrType()) {
-    NullPointerValueKind NPV;
-    // dllimport'd entities aren't constant but are available inside of template
-    // arguments.
-    if (Entity && Entity->hasAttr<DLLImportAttr>())
-      NPV = NPV_NotNullPointer;
-    else
-      NPV = isNullPointerValueTemplateArgument(S, Param, ParamType, ArgIn);
-    switch (NPV) {
-    case NPV_NullPointer:
-      S.Diag(Arg->getExprLoc(), diag::warn_cxx98_compat_template_arg_null);
-      Converted = TemplateArgument(S.Context.getCanonicalType(ParamType),
-                                   /*isNullPtr=*/true);
-      return false;
-
-    case NPV_Error:
-      return true;
-
-    case NPV_NotNullPointer:
-      break;
-    }
-  }
-
   // Stop checking the precise nature of the argument if it is value dependent,
   // it should be checked when instantiated.
   if (Arg->isValueDependent()) {
@@ -4466,12 +4456,15 @@ CheckTemplateArgumentAddressOfObjectOrFunction(Sema &S,
     return false;
   }
 
+  DeclRefExpr *DRE = dyn_cast<DeclRefExpr>(Arg);
   if (!DRE) {
     S.Diag(Arg->getLocStart(), diag::err_template_arg_not_decl_ref)
     << Arg->getSourceRange();
     S.Diag(Param->getLocation(), diag::note_template_param_here);
     return true;
   }
+
+  ValueDecl *Entity = DRE->getDecl();
 
   // Cannot refer to non-static data members
   if (isa<FieldDecl>(Entity) || isa<IndirectFieldDecl>(Entity)) {
@@ -4634,8 +4627,7 @@ static bool CheckTemplateArgumentPointerToMember(Sema &S,
     return true;
   case NPV_NullPointer:
     S.Diag(Arg->getExprLoc(), diag::warn_cxx98_compat_template_arg_null);
-    Converted = TemplateArgument(S.Context.getCanonicalType(ParamType),
-                                 /*isNullPtr*/true);
+    Converted = TemplateArgument(ParamType, /*isNullPtr*/true);
     if (S.Context.getTargetInfo().getCXXABI().isMicrosoft())
       S.RequireCompleteType(Arg->getExprLoc(), ParamType, 0);
     return false;
@@ -5091,8 +5083,7 @@ ExprResult Sema::CheckTemplateArgument(NonTypeTemplateParmDecl *Param,
       
     case NPV_NullPointer:
       Diag(Arg->getExprLoc(), diag::warn_cxx98_compat_template_arg_null);
-      Converted = TemplateArgument(Context.getCanonicalType(ParamType),
-                                   /*isNullPtr*/true);
+      Converted = TemplateArgument(ParamType, /*isNullPtr*/true);
       return Arg;
     }
   }
@@ -6125,7 +6116,6 @@ Sema::ActOnClassTemplateSpecialization(Scope *S, unsigned TagSpec,
                                 Attr,
                                 TemplateParams,
                                 AS_none, /*ModulePrivateLoc=*/SourceLocation(),
-                                /*FriendLoc*/SourceLocation(),
                                 TemplateParameterLists.size() - 1,
                                 TemplateParameterLists.data());
     }
@@ -6549,7 +6539,7 @@ Sema::CheckSpecializationInstantiationRedecl(SourceLocation NewLoc,
 
       // MSVCCompat: MSVC silently ignores duplicate explicit instantiations.
       Diag(NewLoc, (getLangOpts().MSVCCompat)
-                       ? diag::ext_explicit_instantiation_duplicate
+                       ? diag::warn_explicit_instantiation_duplicate
                        : diag::err_explicit_instantiation_duplicate)
           << PrevDecl;
       Diag(DiagLocForExplicitInstantiation(PrevDecl, PrevPointOfInstantiation),

@@ -48,6 +48,7 @@ void writeARCDiagsToPlist(const std::string &outPath,
 class TransformActions {
   DiagnosticsEngine &Diags;
   CapturedDiagList &CapturedDiags;
+  bool ReportedErrors;
   void *Impl; // TransformActionsImpl.
 
 public:
@@ -103,9 +104,7 @@ public:
   void reportNote(StringRef note, SourceLocation loc,
                   SourceRange range = SourceRange());
 
-  bool hasReportedErrors() const {
-    return Diags.hasUnrecoverableErrorOccurred();
-  }
+  bool hasReportedErrors() const { return ReportedErrors; }
 
   class RewriteReceiver {
   public:

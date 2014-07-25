@@ -2301,7 +2301,9 @@ void CXXNameMangler::mangleType(const VectorType *T) {
     llvm::Triple::ArchType Arch =
         getASTContext().getTargetInfo().getTriple().getArch();
     if ((Arch == llvm::Triple::aarch64 ||
-         Arch == llvm::Triple::aarch64_be) && !Target.isOSDarwin())
+         Arch == llvm::Triple::aarch64_be ||
+         Arch == llvm::Triple::arm64_be ||
+         Arch == llvm::Triple::arm64) && !Target.isOSDarwin())
       mangleAArch64NeonVectorType(T);
     else
       mangleNeonVectorType(T);
@@ -3394,8 +3396,10 @@ void CXXNameMangler::mangleTemplateArg(TemplateArgument A) {
   case TemplateArgument::Pack: {
     //  <template-arg> ::= J <template-arg>* E
     Out << 'J';
-    for (const auto &P : A.pack_elements())
-      mangleTemplateArg(P);
+    for (TemplateArgument::pack_iterator PA = A.pack_begin(),
+                                      PAEnd = A.pack_end();
+         PA != PAEnd; ++PA)
+      mangleTemplateArg(*PA);
     Out << 'E';
   }
   }
@@ -3418,8 +3422,8 @@ void CXXNameMangler::mangleSeqID(unsigned SeqID) {
 
     // <seq-id> is encoded in base-36, using digits and upper case letters.
     char Buffer[7]; // log(2**32) / log(36) ~= 7
-    MutableArrayRef<char> BufferRef(Buffer);
-    MutableArrayRef<char>::reverse_iterator I = BufferRef.rbegin();
+    llvm::MutableArrayRef<char> BufferRef(Buffer);
+    llvm::MutableArrayRef<char>::reverse_iterator I = BufferRef.rbegin();
 
     for (; SeqID != 0; SeqID /= 36) {
       unsigned C = SeqID % 36;

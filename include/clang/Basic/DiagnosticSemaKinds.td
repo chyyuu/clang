@@ -84,9 +84,6 @@ def note_ice_conversion_here : Note<
 def err_ice_ambiguous_conversion : Error<
   "ambiguous conversion from type %0 to an integral or unscoped "
   "enumeration type">;
-def err_ice_too_large : Error<
-  "integer constant expression evaluates to value %0 that cannot be "
-  "represented in a %1-bit %select{signed|unsigned}2 integer type">;
 
 // Semantic analysis of constant literals.
 def ext_predef_outside_function : Warning<
@@ -352,7 +349,7 @@ def err_invalid_thread : Error<
 def err_thread_non_global : Error<
   "'%0' variables must have global storage">;
 def err_thread_unsupported : Error<
-  "thread-local storage is not supported for the current target">;
+  "thread-local storage is unsupported for the current target">;
 
 def warn_maybe_falloff_nonvoid_function : Warning<
   "control may reach end of non-void function">,
@@ -390,11 +387,21 @@ def note_unreachable_silence : Note<
 /// Built-in functions.
 def ext_implicit_lib_function_decl : ExtWarn<
   "implicitly declaring library function '%0' with type %1">;
-def note_include_header_or_declare : Note<
-  "include the header <%0> or explicitly provide a declaration for '%1'">;
+def note_please_include_header : Note<
+  "please include the header <%0> or explicitly provide a "
+  "declaration for '%1'">;
 def note_previous_builtin_declaration : Note<"%0 is a builtin with type %1">;
-def warn_implicit_decl_requires_sysheader : Warning<
-  "declaration of built-in function '%1' requires inclusion of the header <%0>">,
+def warn_implicit_decl_requires_stdio : Warning<
+  "declaration of built-in function '%0' requires inclusion of the header "
+  "<stdio.h>">,
+  InGroup<BuiltinRequiresHeader>;
+def warn_implicit_decl_requires_setjmp : Warning<
+  "declaration of built-in function '%0' requires inclusion of the header "
+  "<setjmp.h>">,
+  InGroup<BuiltinRequiresHeader>;
+def warn_implicit_decl_requires_ucontext : Warning<
+  "declaration of built-in function '%0' requires inclusion of the header "
+  "<ucontext.h>">,
   InGroup<BuiltinRequiresHeader>;
 def warn_redecl_library_builtin : Warning<
   "incompatible redeclaration of library function %0">,
@@ -404,8 +411,8 @@ def warn_builtin_unknown : Warning<"use of unknown builtin %0">,
   InGroup<ImplicitFunctionDeclare>, DefaultError;
 def warn_dyn_class_memaccess : Warning<
   "%select{destination for|source of|first operand of|second operand of}0 this "
-  "%1 call is a pointer to %select{|class containing a }2dynamic class %3; "
-  "vtable pointer will be %select{overwritten|copied|moved|compared}4">,
+  "%1 call is a pointer to dynamic class %2; vtable pointer will be "
+  "%select{overwritten|copied|moved|compared}3">,
   InGroup<DiagGroup<"dynamic-class-memaccess">>;
 def note_bad_memaccess_silence : Note<
   "explicitly cast the pointer to silence this warning">;
@@ -446,10 +453,6 @@ def warn_strncat_wrong_size : Warning<
 def note_strncat_wrong_size : Note<
   "change the argument to be the free space in the destination buffer minus " 
   "the terminating null byte">;
-
-def warn_assume_side_effects : Warning<
-  "the argument to __assume has side effects that will be discarded">,
-  InGroup<DiagGroup<"assume">>;
 
 /// main()
 // static main() is not an error in C, just in C++.
@@ -542,11 +545,12 @@ def note_surrounding_namespace_starts_here : Note<
 def err_pragma_loop_invalid_value : Error<
   "invalid argument; expected a positive integer value">;
 def err_pragma_loop_invalid_keyword : Error<
-  "invalid argument; expected '%0' or 'disable'">;
+  "invalid argument; expected 'enable' or 'disable'">;
 def err_pragma_loop_compatibility : Error<
-  "%select{incompatible|duplicate}0 directives '%1' and '%2'">;
+  "%select{incompatible|duplicate}0 directives '%1(%2)' and '%3(%4)'">;
 def err_pragma_loop_precedes_nonloop : Error<
-  "expected a for, while, or do-while loop to follow '%0'">;
+  "expected a for, while, or do-while loop to follow the '#pragma clang loop' "
+  "directive">;
 
 /// Objective-C parser diagnostics
 def err_duplicate_class_def : Error<
@@ -993,11 +997,7 @@ def warn_template_qualified_friend_ignored : Warning<
   "dependent nested name specifier '%0' for friend template declaration is "
   "not supported; ignoring this friend declaration">,
   InGroup<UnsupportedFriend>;
-def ext_friend_tag_redecl_outside_namespace : ExtWarn<
-  "unqualified friend declaration referring to type outside of the nearest "
-  "enclosing namespace is a Microsoft extension; add a nested name specifier">,
-  InGroup<Microsoft>;
-
+  
 def err_invalid_member_in_interface : Error<
   "%select{data member |non-public member function |static member function |"
           "user-declared constructor|user-declared destructor|operator |"
@@ -1071,13 +1071,12 @@ def err_rref_in_exception_spec : Error<
   "rvalue reference type %0 is not allowed in exception specification">;
 def err_mismatched_exception_spec : Error<
   "exception specification in declaration does not match previous declaration">;
-def ext_mismatched_exception_spec : ExtWarn<
-  "exception specification in declaration does not match previous declaration">,
-  InGroup<Microsoft>;
+def warn_mismatched_exception_spec : ExtWarn<
+  "exception specification in declaration does not match previous declaration">;
 def err_override_exception_spec : Error<
   "exception specification of overriding function is more lax than "
   "base version">;
-def ext_override_exception_spec : ExtWarn<
+def warn_override_exception_spec : ExtWarn<
   "exception specification of overriding function is more lax than "
   "base version">, InGroup<Microsoft>;
 def err_incompatible_exception_specs : Error<
@@ -1229,7 +1228,7 @@ def err_member_function_initialization : Error<
   "initializer on function does not look like a pure-specifier">;
 def err_non_virtual_pure : Error<
   "%0 is not virtual and cannot be declared pure">;
-def ext_pure_function_definition : ExtWarn<
+def warn_pure_function_definition : ExtWarn<
   "function definition with pure-specifier is a Microsoft extension">,
   InGroup<Microsoft>;
 def err_implicit_object_parameter_init : Error<
@@ -2129,16 +2128,12 @@ def err_attribute_dllimport_static_field_definition : Error<
 def warn_attribute_dllimport_static_field_definition : Warning<
   "definition of dllimport static field">,
   InGroup<DiagGroup<"dllimport-static-field-def">>;
-def warn_invalid_initializer_from_system_header : Warning<
-  "invalid constructor form class in system header, should not be explicit">,
-  InGroup<DiagGroup<"invalid-initializer-from-system-header">>;
-def note_used_in_initialization_here : Note<"used in initialization here">;
 def err_attribute_dll_member_of_dll_class : Error<
   "attribute %q0 cannot be applied to member of %q1 class">;
 def warn_attribute_dll_instantiated_base_class : Warning<
   "propagating dll attribute to %select{already instantiated|explicitly specialized}0 "
   "base class template "
-  "%select{without dll attribute|with different dll attribute}1 is not supported">,
+  "%select{without dll attribute|with different dll attribute}1 is unsupported">,
   InGroup<DiagGroup<"unsupported-dll-base-class-template">>;
 def err_attribute_weakref_not_static : Error<
   "weakref declaration must have internal linkage">;
@@ -2172,8 +2167,7 @@ def warn_attribute_wrong_decl_type : Warning<
   "struct or union|struct, union or class|types|"
   "Objective-C instance methods|init methods of interface or class extension declarations|"
   "variables, functions and classes|Objective-C protocols|"
-  "functions and global variables|structs or typedefs|"
-  "interface or protocol declarations}1">,
+  "functions and global variables|structs or typedefs}1">,
   InGroup<IgnoredAttributes>;
 def err_attribute_wrong_decl_type : Error<warn_attribute_wrong_decl_type.Text>;
 def warn_type_attribute_wrong_type : Warning<
@@ -2439,7 +2433,6 @@ def warn_address_of_reference_null_compare : Warning<
   "code; comparison may be assumed to always evaluate to "
   "%select{true|false}0">,
   InGroup<TautologicalUndefinedCompare>;
-def note_reference_is_return_value : Note<"%0 returns a reference">;
 
 def note_function_warning_silence : Note<
     "prefix with the address-of operator to silence this warning">;
@@ -2651,8 +2644,8 @@ def err_param_default_argument : Error<
   "C does not support default arguments">;
 def err_param_default_argument_redefinition : Error<
   "redefinition of default argument">;
-def ext_param_default_argument_redefinition : ExtWarn<
-  "redefinition of default argument">, InGroup<Microsoft>;
+def warn_param_default_argument_redefinition : ExtWarn<
+  "redefinition of default argument">;
 def err_param_default_argument_missing : Error<
   "missing default argument on parameter">;
 def err_param_default_argument_missing_name : Error<
@@ -3473,7 +3466,7 @@ def err_nested_name_spec_non_tag : Error<
 // C++ Explicit Instantiation
 def err_explicit_instantiation_duplicate : Error<
     "duplicate explicit instantiation of %0">;
-def ext_explicit_instantiation_duplicate : ExtWarn<
+def warn_explicit_instantiation_duplicate : ExtWarn<
     "duplicate explicit instantiation of %0 ignored as a Microsoft extension">,
     InGroup<Microsoft>;
 def note_previous_explicit_instantiation : Note<
@@ -3799,10 +3792,10 @@ def warn_undefined_inline : Warning<"inline function %q0 is not defined">,
   InGroup<DiagGroup<"undefined-inline">>;
 def note_used_here : Note<"used here">;
 
-def ext_internal_in_extern_inline : ExtWarn<
+def warn_internal_in_extern_inline : ExtWarn<
   "static %select{function|variable}0 %1 is used in an inline function with "
   "external linkage">, InGroup<StaticInInline>;
-def ext_internal_in_extern_inline_quiet : Extension<
+def ext_internal_in_extern_inline : Extension<
   "static %select{function|variable}0 %1 is used in an inline function with "
   "external linkage">, InGroup<StaticInInline>;
 def warn_static_local_in_extern_inline : Warning<
@@ -3811,7 +3804,7 @@ def warn_static_local_in_extern_inline : Warning<
 def note_convert_inline_to_static : Note<
   "use 'static' to give inline function %0 internal linkage">;
 
-def ext_redefinition_of_typedef : ExtWarn<
+def warn_redefinition_of_typedef : ExtWarn<
   "redefinition of typedef %0 is a C11 feature">,
   InGroup<DiagGroup<"typedef-redefinition"> >;
 def err_redefinition_variably_modified_typedef : Error<
@@ -3979,15 +3972,15 @@ def err_variable_object_no_init : Error<
   "variable-sized object may not be initialized">;
 def err_excess_initializers : Error<
   "excess elements in %select{array|vector|scalar|union|struct}0 initializer">;
-def ext_excess_initializers : ExtWarn<
+def warn_excess_initializers : ExtWarn<
   "excess elements in %select{array|vector|scalar|union|struct}0 initializer">;
 def err_excess_initializers_in_char_array_initializer : Error<
   "excess elements in char array initializer">;
-def ext_excess_initializers_in_char_array_initializer : ExtWarn<
+def warn_excess_initializers_in_char_array_initializer : ExtWarn<
   "excess elements in char array initializer">;
 def err_initializer_string_for_char_array_too_long : Error<
   "initializer-string for char array is too long">;
-def ext_initializer_string_for_char_array_too_long : ExtWarn<
+def warn_initializer_string_for_char_array_too_long : ExtWarn<
   "initializer-string for char array is too long">;
 def warn_missing_field_initializers : Warning<
   "missing field %0 initializer">,
@@ -4071,7 +4064,7 @@ def warn_unused_label : Warning<"unused label %0">,
   InGroup<UnusedLabel>, DefaultIgnore;
 
 def err_goto_into_protected_scope : Error<"goto into protected scope">;
-def ext_goto_into_protected_scope : ExtWarn<"goto into protected scope">,
+def warn_goto_into_protected_scope : ExtWarn<"goto into protected scope">,
   InGroup<Microsoft>;
 def warn_cxx98_compat_goto_into_protected_scope : Warning<
   "goto would jump into protected scope in C++98">,
@@ -4468,9 +4461,9 @@ def err_offsetof_array_type : Error<"offsetof requires array type, %0 invalid">;
 def ext_offsetof_extended_field_designator : Extension<
   "using extended field designator is an extension">,
   InGroup<DiagGroup<"extended-offsetof">>;
-def ext_offsetof_non_pod_type : ExtWarn<"offset of on non-POD type %0">,
+def warn_offsetof_non_pod_type : ExtWarn<"offset of on non-POD type %0">,
   InGroup<InvalidOffsetof>;
-def ext_offsetof_non_standardlayout_type : ExtWarn<
+def warn_offsetof_non_standardlayout_type : ExtWarn<
   "offset of on non-standard-layout type %0">, InGroup<InvalidOffsetof>;
 def err_offsetof_bitfield : Error<"cannot compute offset of bit-field %0">;
 def err_offsetof_field_of_virtual_base : Error<
@@ -5155,8 +5148,6 @@ def err_need_header_before_typeid : Error<
   "you need to include <typeinfo> before using the 'typeid' operator">;
 def err_need_header_before_ms_uuidof : Error<
   "you need to include <guiddef.h> before using the '__uuidof' operator">;
-def err_ms___leave_not_in___try : Error<
-  "'__leave' statement not in __try block">;
 def err_uuidof_without_guid : Error<
   "cannot call operator __uuidof on a type with no GUID">;
 def err_uuidof_with_multiple_guids : Error<
@@ -5206,9 +5197,7 @@ def err_address_space_qualified_delete : Error<
 
 def err_default_init_const : Error<
   "default initialization of an object of const type %0"
-  "%select{| without a user-provided default constructor}1">;
-def note_add_initializer : Note<
-  "add an explicit initializer to initialize %0">;
+  "%select{| requires a user-provided default constructor}1">;
 def err_delete_operand : Error<"cannot delete expression of type %0">;
 def ext_delete_void_ptr_operand : ExtWarn<
   "cannot delete expression with pointer-to-'void' type %0">;
@@ -5922,10 +5911,10 @@ def ext_typecheck_cond_incompatible_operands_nonstandard : ExtWarn<
   "pointer type %2">;
 def err_cast_selector_expr : Error<
   "cannot type cast @selector expression">;
-def ext_typecheck_cond_incompatible_pointers : ExtWarn<
+def warn_typecheck_cond_incompatible_pointers : ExtWarn<
   "pointer type mismatch%diff{ ($ and $)|}0,1">,
   InGroup<DiagGroup<"pointer-type-mismatch">>;
-def ext_typecheck_cond_pointer_integer_mismatch : ExtWarn<
+def warn_typecheck_cond_pointer_integer_mismatch : ExtWarn<
   "pointer/integer type mismatch in conditional expression"
   "%diff{ ($ and $)|}0,1">,
   InGroup<DiagGroup<"conditional-type-mismatch">>;
@@ -6418,12 +6407,12 @@ def warn_printf_nonsensical_flag: Warning<
 def warn_format_nonsensical_length: Warning<
   "length modifier '%0' results in undefined behavior or no effect with '%1' conversion specifier">,
   InGroup<Format>;
-def warn_format_non_standard_positional_arg: Warning<
+def warn_format_non_standard_positional_arg: ExtWarn<
   "positional arguments are not supported by ISO C">, InGroup<FormatNonStandard>, DefaultIgnore;
-def warn_format_non_standard: Warning<
+def warn_format_non_standard: ExtWarn<
   "'%0' %select{length modifier|conversion specifier}1 is not supported by ISO C">,
   InGroup<FormatNonStandard>, DefaultIgnore;
-def warn_format_non_standard_conversion_spec: Warning<
+def warn_format_non_standard_conversion_spec: ExtWarn<
   "using length modifier '%0' with conversion specifier '%1' is not supported by ISO C">,
   InGroup<FormatNonStandard>, DefaultIgnore;
 def warn_printf_ignored_flag: Warning<
@@ -6924,7 +6913,7 @@ def err_uncasted_send_to_unknown_any_method : Error<
   "no known method %select{%objcinstance1|%objcclass1}0; cast the "
   "message send to the method's return type">;
 def err_unsupported_unknown_any_decl : Error<
-  "%0 has unknown type, which is not supported for this kind of declaration">;
+  "%0 has unknown type, which is unsupported for this kind of declaration">;
 def err_unsupported_unknown_any_expr : Error<
   "unsupported expression with unknown type">;
 def err_unsupported_unknown_any_call : Error<
@@ -7017,12 +7006,8 @@ def err_omp_expected_var_name : Error<
   "expected variable name">;
 def err_omp_required_method : Error<
   "%0 variable must have an accessible, unambiguous %select{default constructor|copy constructor|copy assignment operator|'%2'|destructor}1">;
-def err_omp_task_predetermined_firstprivate_required_method : Error<
-  "predetermined as a firstprivate in a task construct variable must have an accessible, unambiguous %select{copy constructor|destructor}0">;
 def err_omp_clause_ref_type_arg : Error<
   "arguments of OpenMP clause '%0' cannot be of reference type %1">;
-def err_omp_task_predetermined_firstprivate_ref_type_arg : Error<
-  "predetermined as a firstprivate in a task construct variable cannot be of reference type %0">;
 def err_omp_threadprivate_incomplete_type : Error<
   "threadprivate variable with incomplete type %0">;
 def err_omp_no_dsa_for_variable : Error<
@@ -7039,13 +7024,10 @@ def note_omp_predetermined_dsa : Note<
   "loop iteration variable is predetermined as lastprivate|"
   "constant variable is predetermined as shared|"
   "global variable is predetermined as shared|"
-  "non-shared variable in a task construct is predetermined as firstprivate|"
   "variable with automatic storage duration is predetermined as private}0"
   "%select{|; perhaps you forget to enclose 'omp %2' directive into a parallel or another task region?}1">;
-def note_omp_implicit_dsa : Note<
-  "implicitly determined as %0">;
 def err_omp_loop_var_dsa : Error<
-  "loop iteration variable in the associated loop of 'omp %1' directive may not be %0, predetermined as %2">;
+  "loop iteration variable may not be %0">;
 def err_omp_not_for : Error<
   "%select{statement after '#pragma omp %1' must be a for loop|"
   "expected %2 for loops after '#pragma omp %1'%select{|, but found only %4}3}0">;
@@ -7128,50 +7110,11 @@ def err_omp_reduction_id_not_compatible : Error<
   "variable of type %0 is not valid for specified reduction operation">;
 def err_omp_prohibited_region : Error<
   "region cannot be%select{| closely}0 nested inside '%1' region"
-  "%select{|; perhaps you forget to enclose 'omp %3' directive into a parallel region?|"
-  "; perhaps you forget to enclose 'omp %3' directive into a for or a parallel for region with 'ordered' clause?}2">;
+  "%select{|; perhaps you forget to enclose 'omp %3' directive into a parallel region?}2">;
 def err_omp_prohibited_region_simd : Error<
   "OpenMP constructs may not be nested inside a simd region">;
-def err_omp_prohibited_region_atomic : Error<
-  "OpenMP constructs may not be nested inside an atomic region">;
-def err_omp_prohibited_region_critical_same_name : Error<
-  "cannot nest 'critical' regions having the same name %0">;
-def note_omp_previous_critical_region : Note<
-  "previous 'critical' region starts here">;
 def err_omp_sections_not_compound_stmt : Error<
   "the statement for '#pragma omp sections' must be a compound statement">;
-def err_omp_parallel_sections_not_compound_stmt : Error<
-  "the statement for '#pragma omp parallel sections' must be a compound statement">;
-def err_omp_orphaned_section_directive : Error<
-  "%select{orphaned 'omp section' directives are prohibited, it|'omp section' directive}0"
-  " must be closely nested to a sections region%select{|, not a %1 region}0">;
-def err_omp_sections_substmt_not_section : Error<
-  "statement in 'omp sections' directive must be enclosed into a section region">;
-def err_omp_parallel_sections_substmt_not_section : Error<
-  "statement in 'omp parallel sections' directive must be enclosed into a section region">;
-def err_omp_parallel_reduction_in_task_firstprivate : Error<
-  "argument of a reduction clause of a %0 construct must not appear in a firstprivate clause on a task construct">;
-def err_omp_atomic_read_not_expression_statement : Error<
-  "the statement for 'atomic read' must be an expression statement of form 'v = x;',"
-  " where v and x are both l-value expressions with scalar type">;
-def err_omp_atomic_write_not_expression_statement : Error<
-  "the statement for 'atomic write' must be an expression statement of form 'x = expr;',"
-  " where x is an l-value expression with scalar type">;
-def err_omp_atomic_update_not_expression_statement : Error<
-  "the statement for 'atomic%select{| update}0' must be an expression statement of form '++x;', '--x;', 'x++;', 'x--;', 'x binop= expr;', 'x = x binop expr' or 'x = expr binop x',"
-  " where x is an l-value expression with scalar type">;
-def err_omp_atomic_capture_not_expression_statement : Error<
-  "the statement for 'atomic capture' must be an expression statement of form 'v = ++x;', 'v = --x;', 'v = x++;', 'v = x--;', 'v = x binop= expr;', 'v = x = x binop expr' or 'v = x = expr binop x',"
-  " where x and v are both l-value expressions with scalar type">;
-def err_omp_atomic_capture_not_compound_statement : Error<
-  "the statement for 'atomic capture' must be a compound statement of form '{v = x; x binop= expr;}', '{x binop= expr; v = x;}',"
-  " '{v = x; x = x binop expr;}', '{v = x; x = expr binop x;}', '{x = x binop expr; v = x;}', '{x = expr binop x; v = x;}' or '{v = x; x = expr;}',"
-  " '{v = x; x++;}', '{v = x; ++x;}', '{++x; v = x;}', '{x++; v = x;}', '{v = x; x--;}', '{v = x; --x;}', '{--x; v = x;}', '{x--; v = x;}'"
-  " where x is an l-value expression with scalar type">;
-def err_omp_atomic_several_clauses : Error<
-  "directive '#pragma omp atomic' cannot contain more than one 'read', 'write', 'update' or 'capture' clause">;
-def note_omp_atomic_previous_clause : Note<
-  "'%0' clause used here">;
 } // end of OpenMP category
 
 let CategoryName = "Related Result Type Issue" in {
@@ -7223,8 +7166,6 @@ def err_module_import_not_at_top_level : Error<
 def note_module_import_not_at_top_level : Note<"%0 begins here">;
 def err_module_self_import : Error<
   "import of module '%0' appears within same top-level module '%1'">;
-def err_module_import_in_implementation : Error<
-  "@import of module '%0' in implementation of '%1'; use #import">;
 }
 
 let CategoryName = "Documentation Issue" in {

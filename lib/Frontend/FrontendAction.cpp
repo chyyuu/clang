@@ -12,6 +12,7 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclGroup.h"
 #include "clang/Frontend/ASTUnit.h"
+#include "clang/Frontend/ChainedIncludesSource.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendDiagnostic.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
@@ -31,8 +32,6 @@
 #include "llvm/Support/raw_ostream.h"
 #include <system_error>
 using namespace clang;
-
-template class llvm::Registry<clang::PluginASTAction>;
 
 namespace {
 
@@ -316,12 +315,13 @@ bool FrontendAction::BeginSourceFile(CompilerInstance &CI,
     
     if (!CI.getPreprocessorOpts().ChainedIncludes.empty()) {
       // Convert headers to PCH and chain them.
-      IntrusiveRefCntPtr<ExternalSemaSource> source, FinalReader;
-      source = createChainedIncludesSource(CI, FinalReader);
+      IntrusiveRefCntPtr<ChainedIncludesSource> source;
+      source = ChainedIncludesSource::create(CI);
       if (!source)
         goto failure;
-      CI.setModuleManager(static_cast<ASTReader *>(FinalReader.get()));
+      CI.setModuleManager(static_cast<ASTReader*>(&source->getFinalReader()));
       CI.getASTContext().setExternalSource(source);
+
     } else if (!CI.getPreprocessorOpts().ImplicitPCHInclude.empty()) {
       // Use PCH.
       assert(hasPCHSupport() && "This action does not have PCH support!");

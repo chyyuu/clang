@@ -37,20 +37,6 @@ set(SOURCES
   ../../include/clang-c/Index.h
   )
 
-set(LIBS
-  clangAST
-  clangBasic
-  clangFrontend
-  clangIndex
-  clangLex
-  clangSema
-  clangTooling
-)
-
-if (CLANG_ENABLE_ARCMT)
-  list(APPEND LIBS clangARCMigrate)
-endif ()
-
 option(LIBCLANG_BUILD_STATIC
   "Build libclang as a static library (in addition to a shared one)" OFF)
 
@@ -83,7 +69,14 @@ add_clang_library(libclang ${ENABLE_SHARED} ${ENABLE_STATIC}
   DEPENDS clang-headers
 
   LINK_LIBS
-  ${LIBS}
+  clangARCMigrate
+  clangAST
+  clangBasic
+  clangFrontend
+  clangIndex
+  clangLex
+  clangSema
+  clangTooling
 
   LINK_COMPONENTS
   BitReader

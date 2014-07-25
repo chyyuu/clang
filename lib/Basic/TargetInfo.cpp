@@ -52,6 +52,7 @@ TargetInfo::TargetInfo(const llvm::Triple &T) : TargetOpts(), Triple(T) {
   SizeType = UnsignedLong;
   PtrDiffType = SignedLong;
   IntMaxType = SignedLongLong;
+  UIntMaxType = UnsignedLongLong;
   IntPtrType = SignedLong;
   WCharType = SignedInt;
   WIntType = SignedInt;
@@ -118,7 +119,7 @@ const char *TargetInfo::getTypeName(IntType T) {
 
 /// getTypeConstantSuffix - Return the constant suffix for the specified
 /// integer type enum. For example, SignedLong -> "L".
-const char *TargetInfo::getTypeConstantSuffix(IntType T) const {
+const char *TargetInfo::getTypeConstantSuffix(IntType T) {
   switch (T) {
   default: llvm_unreachable("not an integer!");
   case SignedChar:
@@ -127,33 +128,10 @@ const char *TargetInfo::getTypeConstantSuffix(IntType T) const {
   case SignedLong:       return "L";
   case SignedLongLong:   return "LL";
   case UnsignedChar:
-    if (getCharWidth() < getIntWidth())
-      return "";
   case UnsignedShort:
-    if (getShortWidth() < getIntWidth())
-      return "";
   case UnsignedInt:      return "U";
   case UnsignedLong:     return "UL";
   case UnsignedLongLong: return "ULL";
-  }
-}
-
-/// getTypeFormatModifier - Return the printf format modifier for the
-/// specified integer type enum. For example, SignedLong -> "l".
-
-const char *TargetInfo::getTypeFormatModifier(IntType T) {
-  switch (T) {
-  default: llvm_unreachable("not an integer!");
-  case SignedChar:
-  case UnsignedChar:     return "hh";
-  case SignedShort:
-  case UnsignedShort:    return "h";
-  case SignedInt:
-  case UnsignedInt:      return "";
-  case SignedLong:
-  case UnsignedLong:     return "l";
-  case SignedLongLong:
-  case UnsignedLongLong: return "ll";
   }
 }
 
@@ -264,10 +242,10 @@ bool TargetInfo::isTypeSigned(IntType T) {
   };
 }
 
-/// adjust - Set forced language options.
+/// setForcedLangOptions - Set forced language options.
 /// Apply changes to the target information with respect to certain
 /// language options which change the target configuration.
-void TargetInfo::adjust(const LangOptions &Opts) {
+void TargetInfo::setForcedLangOptions(LangOptions &Opts) {
   if (Opts.NoBitFieldTypeAlign)
     UseBitFieldTypeAlignment = false;
   if (Opts.ShortWChar)
@@ -300,6 +278,7 @@ void TargetInfo::adjust(const LangOptions &Opts) {
     IntPtrType = Is32BitArch ? SignedInt : SignedLong;
 
     IntMaxType = SignedLongLong;
+    UIntMaxType = UnsignedLongLong;
     Int64Type = SignedLong;
 
     HalfFormat = &llvm::APFloat::IEEEhalf;

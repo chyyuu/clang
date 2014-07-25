@@ -699,7 +699,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::FunctionParmPackExprClass:
     case Stmt::SEHTryStmtClass:
     case Stmt::SEHExceptStmtClass:
-    case Stmt::SEHLeaveStmtClass:
     case Stmt::LambdaExprClass:
     case Stmt::SEHFinallyStmtClass: {
       const ExplodedNode *node = Bldr.generateSink(S, Pred, Pred->getState());
@@ -735,19 +734,6 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::OMPSimdDirectiveClass:
     case Stmt::OMPForDirectiveClass:
     case Stmt::OMPSectionsDirectiveClass:
-    case Stmt::OMPSectionDirectiveClass:
-    case Stmt::OMPSingleDirectiveClass:
-    case Stmt::OMPMasterDirectiveClass:
-    case Stmt::OMPCriticalDirectiveClass:
-    case Stmt::OMPParallelForDirectiveClass:
-    case Stmt::OMPParallelSectionsDirectiveClass:
-    case Stmt::OMPTaskDirectiveClass:
-    case Stmt::OMPTaskyieldDirectiveClass:
-    case Stmt::OMPBarrierDirectiveClass:
-    case Stmt::OMPTaskwaitDirectiveClass:
-    case Stmt::OMPFlushDirectiveClass:
-    case Stmt::OMPOrderedDirectiveClass:
-    case Stmt::OMPAtomicDirectiveClass:
       llvm_unreachable("Stmt should not be in analyzer evaluation loop");
 
     case Stmt::ObjCSubscriptRefExprClass:
@@ -2529,7 +2515,7 @@ struct DOTGraphTraits<ExplodedNode*> :
     }
 
     ProgramStateRef state = N->getState();
-    Out << "\\|StateID: " << (const void*) state.get()
+    Out << "\\|StateID: " << (const void*) state.getPtr()
         << " NodeID: " << (const void*) N << "\\|";
     state->printDOT(Out);
 

@@ -109,7 +109,7 @@ static bool IsCommonTypo(tok::TokenKind ExpectedTok, const Token &Tok) {
 }
 
 bool Parser::ExpectAndConsume(tok::TokenKind ExpectedTok, unsigned DiagID,
-                              StringRef Msg) {
+                              const char *Msg) {
   if (Tok.is(ExpectedTok) || Tok.is(tok::code_completion)) {
     ConsumeAnyToken();
     return false;

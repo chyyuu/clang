@@ -201,7 +201,6 @@ namespace {
 
     /// Determine whether this is a one-past-the-end pointer.
     bool isOnePastTheEnd() const {
-      assert(!Invalid);
       if (IsOnePastTheEnd)
         return true;
       if (MostDerivedArraySize &&
@@ -1309,7 +1308,7 @@ static bool CheckLValueConstantExpression(EvalInfo &Info, SourceLocation Loc,
   }
 
   // Does this refer one past the end of some object?
-  if (!Designator.Invalid && Designator.isOnePastTheEnd()) {
+  if (Designator.isOnePastTheEnd()) {
     const ValueDecl *VD = Base.dyn_cast<const ValueDecl*>();
     Info.Diag(Loc, diag::note_constexpr_past_end, 1)
       << !Designator.Entries.empty() << !!VD << VD;
@@ -4667,13 +4666,8 @@ public:
     // Can't look at 'this' when checking a potential constant expression.
     if (Info.checkingPotentialConstantExpression())
       return false;
-    if (!Info.CurrentCall->This) {
-      if (Info.getLangOpts().CPlusPlus11)
-        Info.Diag(E, diag::note_constexpr_this) << E->isImplicit();
-      else
-        Info.Diag(E);
-      return false;
-    }
+    if (!Info.CurrentCall->This)
+      return Error(E);
     Result = *Info.CurrentCall->This;
     return true;
   }
@@ -6054,8 +6048,7 @@ bool IntExprEvaluator::VisitCallExpr(const CallExpr *E) {
 
   case Builtin::BI__builtin_clz:
   case Builtin::BI__builtin_clzl:
-  case Builtin::BI__builtin_clzll:
-  case Builtin::BI__builtin_clzs: {
+  case Builtin::BI__builtin_clzll: {
     APSInt Val;
     if (!EvaluateInteger(E->getArg(0), Val, Info))
       return false;
@@ -6070,8 +6063,7 @@ bool IntExprEvaluator::VisitCallExpr(const CallExpr *E) {
 
   case Builtin::BI__builtin_ctz:
   case Builtin::BI__builtin_ctzl:
-  case Builtin::BI__builtin_ctzll:
-  case Builtin::BI__builtin_ctzs: {
+  case Builtin::BI__builtin_ctzll: {
     APSInt Val;
     if (!EvaluateInteger(E->getArg(0), Val, Info))
       return false;
@@ -7956,16 +7948,6 @@ public:
       return true;
     }
   }
-
-  bool VisitCallExpr(const CallExpr *E) {
-    switch (E->getBuiltinCallee()) {
-    default:
-      return ExprEvaluatorBaseTy::VisitCallExpr(E);
-    case Builtin::BI__assume:
-      // The argument is not evaluated!
-      return true;
-    }
-  }
 };
 } // end anonymous namespace
 
@@ -8740,7 +8722,7 @@ bool Expr::isCXX11ConstantExpr(const ASTContext &Ctx, APValue *Result,
 
 bool Expr::EvaluateWithSubstitution(APValue &Value, ASTContext &Ctx,
                                     const FunctionDecl *Callee,
-                                    ArrayRef<const Expr*> Args) const {
+                                    llvm::ArrayRef<const Expr*> Args) const {
   Expr::EvalStatus Status;
   EvalInfo Info(Ctx, Status, EvalInfo::EM_ConstantExpressionUnevaluated);
 

@@ -2161,15 +2161,12 @@ bool Expr::isUnusedResultAWarning(const Expr *&WarnE, SourceLocation &Loc,
       return true;
     }
 
-    if (const ObjCMethodDecl *MD = ME->getMethodDecl())
-      if (MD->hasAttr<WarnUnusedResultAttr>() ||
-          (MD->isPropertyAccessor() && !MD->getReturnType()->isVoidType() &&
-           !ME->getReceiverType()->isObjCIdType())) {
-        WarnE = this;
-        Loc = getExprLoc();
-        return true;
-      }
-
+    const ObjCMethodDecl *MD = ME->getMethodDecl();
+    if (MD && MD->hasAttr<WarnUnusedResultAttr>()) {
+      WarnE = this;
+      Loc = getExprLoc();
+      return true;
+    }
     return false;
   }
 

@@ -363,7 +363,7 @@ struct ReverseSpecificityThenName {
 }
 
 std::vector<MatcherCompletion> Registry::getCompletions(
-    ArrayRef<std::pair<MatcherCtor, unsigned> > Context) {
+    llvm::ArrayRef<std::pair<MatcherCtor, unsigned> > Context) {
   ASTNodeKind InitialTypes[] = {
     ASTNodeKind::getFromNodeKind<Decl>(),
     ASTNodeKind::getFromNodeKind<QualType>(),
@@ -373,12 +373,12 @@ std::vector<MatcherCompletion> Registry::getCompletions(
     ASTNodeKind::getFromNodeKind<NestedNameSpecifierLoc>(),
     ASTNodeKind::getFromNodeKind<TypeLoc>()
   };
-  ArrayRef<ASTNodeKind> InitialTypesRef(InitialTypes);
+  llvm::ArrayRef<ASTNodeKind> InitialTypesRef(InitialTypes);
 
   // Starting with the above seed of acceptable top-level matcher types, compute
   // the acceptable type set for the argument indicated by each context element.
   std::set<ASTNodeKind> TypeSet(InitialTypesRef.begin(), InitialTypesRef.end());
-  for (ArrayRef<std::pair<MatcherCtor, unsigned> >::iterator
+  for (llvm::ArrayRef<std::pair<MatcherCtor, unsigned> >::iterator
            CtxI = Context.begin(),
            CtxE = Context.end();
        CtxI != CtxE; ++CtxI) {

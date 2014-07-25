@@ -1,10 +1,9 @@
 set(LLVM_LINK_COMPONENTS
   Core
   ExecutionEngine
-  MC
-  MCJIT
+  JIT
   Support
-  native
+  nativecodegen
   )
 
 add_clang_executable(clang-interpreter

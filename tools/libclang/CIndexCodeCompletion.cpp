@@ -651,7 +651,8 @@ struct CodeCompleteAtInfo {
   const char *complete_filename;
   unsigned complete_line;
   unsigned complete_column;
-  ArrayRef<CXUnsavedFile> unsaved_files;
+  struct CXUnsavedFile *unsaved_files;
+  unsigned num_unsaved_files;
   unsigned options;
   CXCodeCompleteResults *result;
 };
@@ -661,6 +662,8 @@ void clang_codeCompleteAt_Impl(void *UserData) {
   const char *complete_filename = CCAI->complete_filename;
   unsigned complete_line = CCAI->complete_line;
   unsigned complete_column = CCAI->complete_column;
+  struct CXUnsavedFile *unsaved_files = CCAI->unsaved_files;
+  unsigned num_unsaved_files = CCAI->num_unsaved_files;
   unsigned options = CCAI->options;
   bool IncludeBriefComments = options & CXCodeComplete_IncludeBriefComments;
   CCAI->result = nullptr;
@@ -690,13 +693,14 @@ void clang_codeCompleteAt_Impl(void *UserData) {
 
   // Perform the remapping of source files.
   SmallVector<ASTUnit::RemappedFile, 4> RemappedFiles;
-
-  for (auto &UF : CCAI->unsaved_files) {
-    llvm::MemoryBuffer *MB =
-        llvm::MemoryBuffer::getMemBufferCopy(getContents(UF), UF.Filename);
-    RemappedFiles.push_back(std::make_pair(UF.Filename, MB));
+  for (unsigned I = 0; I != num_unsaved_files; ++I) {
+    StringRef Data(unsaved_files[I].Contents, unsaved_files[I].Length);
+    const llvm::MemoryBuffer *Buffer
+      = llvm::MemoryBuffer::getMemBufferCopy(Data, unsaved_files[I].Filename);
+    RemappedFiles.push_back(std::make_pair(unsaved_files[I].Filename,
+                                           Buffer));
   }
-
+  
   if (EnableLogging) {
     // FIXME: Add logging.
   }
@@ -819,12 +823,9 @@ CXCodeCompleteResults *clang_codeCompleteAt(CXTranslationUnit TU,
          << complete_filename << ':' << complete_line << ':' << complete_column;
   }
 
-  if (num_unsaved_files && !unsaved_files)
-    return nullptr;
-
-  CodeCompleteAtInfo CCAI = {TU, complete_filename, complete_line,
-    complete_column, llvm::makeArrayRef(unsaved_files, num_unsaved_files),
-    options, nullptr};
+  CodeCompleteAtInfo CCAI = { TU, complete_filename, complete_line,
+                              complete_column, unsaved_files, num_unsaved_files,
+                              options, nullptr };
 
   if (getenv("LIBCLANG_NOTHREADS")) {
     clang_codeCompleteAt_Impl(&CCAI);

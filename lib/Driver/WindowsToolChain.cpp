@@ -59,11 +59,7 @@ bool Windows::IsIntegratedAssemblerDefault() const {
 }
 
 bool Windows::IsUnwindTablesDefault() const {
-  // FIXME: LLVM's lowering of Win64 data is broken right now.  MSVC's linker
-  // says that our object files provide invalid .pdata contributions.  Until
-  // that is fixed, don't ask for unwind tables.
-  return false;
-  //return getArch() == llvm::Triple::x86_64;
+  return getArch() == llvm::Triple::x86_64;
 }
 
 bool Windows::isPICDefault() const {

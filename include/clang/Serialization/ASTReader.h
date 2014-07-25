@@ -46,6 +46,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <sys/stat.h>
 #include <utility>
 #include <vector>
 
@@ -1366,8 +1367,7 @@ public:
                          bool Complain);
 
   /// \brief Make the names within this set of hidden names visible.
-  void makeNamesVisible(const HiddenNames &Names, Module *Owner,
-                        bool FromFinalization);
+  void makeNamesVisible(const HiddenNames &Names, Module *Owner);
 
   /// \brief Set the AST callbacks listener.
   void setListener(ASTReaderListener *listener) {
@@ -1838,13 +1838,12 @@ public:
   llvm::DenseMap<IdentifierInfo*, AmbiguousMacros> AmbiguousMacroDefs;
 
   void
-  removeOverriddenMacros(IdentifierInfo *II, SourceLocation Loc,
-                         AmbiguousMacros &Ambig,
-                         ArrayRef<serialization::SubmoduleID> Overrides);
+  removeOverriddenMacros(IdentifierInfo *II, AmbiguousMacros &Ambig,
+                         llvm::ArrayRef<serialization::SubmoduleID> Overrides);
 
   AmbiguousMacros *
-  removeOverriddenMacros(IdentifierInfo *II, SourceLocation Loc,
-                         ArrayRef<serialization::SubmoduleID> Overrides);
+  removeOverriddenMacros(IdentifierInfo *II,
+                         llvm::ArrayRef<serialization::SubmoduleID> Overrides);
 
   /// \brief Retrieve the macro with the given ID.
   MacroInfo *getMacro(serialization::MacroID ID);
@@ -2025,7 +2024,7 @@ public:
   void addPendingMacroFromModule(IdentifierInfo *II,
                                  ModuleFile *M,
                                  serialization::GlobalMacroID GMacID,
-                                 ArrayRef<serialization::SubmoduleID>);
+                                 llvm::ArrayRef<serialization::SubmoduleID>);
 
   /// \brief Add a macro to deserialize its macro directive history from a PCH.
   ///

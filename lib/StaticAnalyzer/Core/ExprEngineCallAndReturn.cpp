@@ -708,16 +708,18 @@ static bool isContainerClass(const ASTContext &Ctx, const CXXRecordDecl *RD) {
          hasMember(Ctx, RD, "iterator_category");
 }
 
-/// Returns true if the given function refers to a method of a C++ container
-/// or iterator.
+/// Returns true if the given function refers to a constructor or destructor of
+/// a C++ container or iterator.
 ///
-/// We generally do a poor job modeling most containers right now, and might
-/// prefer not to inline their methods.
-static bool isContainerMethod(const ASTContext &Ctx,
-                              const FunctionDecl *FD) {
-  if (const CXXMethodDecl *MD = dyn_cast<CXXMethodDecl>(FD))
-    return isContainerClass(Ctx, MD->getParent());
-  return false;
+/// We generally do a poor job modeling most containers right now, and would
+/// prefer not to inline their setup and teardown.
+static bool isContainerCtorOrDtor(const ASTContext &Ctx,
+                                  const FunctionDecl *FD) {
+  if (!(isa<CXXConstructorDecl>(FD) || isa<CXXDestructorDecl>(FD)))
+    return false;
+
+  const CXXRecordDecl *RD = cast<CXXMethodDecl>(FD)->getParent();
+  return isContainerClass(Ctx, RD);
 }
 
 /// Returns true if the given function is the destructor of a class named
@@ -763,9 +765,9 @@ static bool mayInlineDecl(AnalysisDeclContext *CalleeADC,
 
       // Conditionally control the inlining of methods on objects that look
       // like C++ containers.
-      if (!Opts.mayInlineCXXContainerMethods())
+      if (!Opts.mayInlineCXXContainerCtorsAndDtors())
         if (!Ctx.getSourceManager().isInMainFile(FD->getLocation()))
-          if (isContainerMethod(Ctx, FD))
+          if (isContainerCtorOrDtor(Ctx, FD))
             return false;
             
       // Conditionally control the inlining of the destructor of C++ shared_ptr.

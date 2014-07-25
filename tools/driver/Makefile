@@ -35,8 +35,7 @@ LINK_COMPONENTS := $(TARGETS_TO_BUILD) asmparser bitreader bitwriter codegen \
                    instrumentation ipo irreader linker objcarcopts option \
                    profiledata selectiondag
 USEDLIBS = clangFrontendTool.a clangFrontend.a clangDriver.a \
-           clangSerialization.a clangCodeGen.a clangParse.a clangSema.a \
-           clangRewriteFrontend.a clangRewrite.a
+           clangSerialization.a clangCodeGen.a clangParse.a clangSema.a
 
 ifeq ($(ENABLE_CLANG_STATIC_ANALYZER),1)
 USEDLIBS += clangStaticAnalyzerFrontend.a clangStaticAnalyzerCheckers.a \
@@ -45,6 +44,10 @@ endif
 
 ifeq ($(ENABLE_CLANG_ARCMT),1)
 USEDLIBS += clangARCMigrate.a
+endif
+
+ifeq ($(ENABLE_CLANG_REWRITER),1)
+USEDLIBS += clangRewriteFrontend.a clangRewriteCore.a
 endif
 
 USEDLIBS += clangAnalysis.a clangEdit.a clangAST.a clangLex.a clangBasic.a

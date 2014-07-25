@@ -97,10 +97,6 @@ CXStringBuf *getCXStringBuf(CXTranslationUnit TU);
 bool isManagedByPool(CXString str);
 
 }
-
-static inline StringRef getContents(const CXUnsavedFile &UF) {
-  return StringRef(UF.Contents, UF.Length);
-}
 }
 
 #endif

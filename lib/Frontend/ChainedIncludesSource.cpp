@@ -12,6 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "clang/Frontend/ChainedIncludesSource.h"
 #include "clang/Basic/TargetInfo.h"
 #include "clang/Frontend/ASTUnit.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -23,54 +24,6 @@
 #include "llvm/Support/MemoryBuffer.h"
 
 using namespace clang;
-
-namespace {
-class ChainedIncludesSource : public ExternalSemaSource {
-public:
-  virtual ~ChainedIncludesSource();
-
-  ExternalSemaSource &getFinalReader() const { return *FinalReader; }
-
-  std::vector<CompilerInstance *> CIs;
-  IntrusiveRefCntPtr<ExternalSemaSource> FinalReader;
-
-protected:
-  //===----------------------------------------------------------------------===//
-  // ExternalASTSource interface.
-  //===----------------------------------------------------------------------===//
-
-  Decl *GetExternalDecl(uint32_t ID) override;
-  Selector GetExternalSelector(uint32_t ID) override;
-  uint32_t GetNumExternalSelectors() override;
-  Stmt *GetExternalDeclStmt(uint64_t Offset) override;
-  CXXBaseSpecifier *GetExternalCXXBaseSpecifiers(uint64_t Offset) override;
-  bool FindExternalVisibleDeclsByName(const DeclContext *DC,
-                                      DeclarationName Name) override;
-  ExternalLoadResult
-  FindExternalLexicalDecls(const DeclContext *DC,
-                           bool (*isKindWeWant)(Decl::Kind),
-                           SmallVectorImpl<Decl *> &Result) override;
-  void CompleteType(TagDecl *Tag) override;
-  void CompleteType(ObjCInterfaceDecl *Class) override;
-  void StartedDeserializing() override;
-  void FinishedDeserializing() override;
-  void StartTranslationUnit(ASTConsumer *Consumer) override;
-  void PrintStats() override;
-
-  /// Return the amount of memory used by memory buffers, breaking down
-  /// by heap-backed versus mmap'ed memory.
-  void getMemoryBufferSizes(MemoryBufferSizes &sizes) const override;
-
-  //===----------------------------------------------------------------------===//
-  // ExternalSemaSource interface.
-  //===----------------------------------------------------------------------===//
-
-  void InitializeSema(Sema &S) override;
-  void ForgetSema() override;
-  void ReadMethodPool(Selector Sel) override;
-  bool LookupUnqualified(LookupResult &R, Scope *S) override;
-};
-}
 
 static ASTReader *
 createASTReader(CompilerInstance &CI, StringRef pchFile,
@@ -109,8 +62,8 @@ ChainedIncludesSource::~ChainedIncludesSource() {
     delete CIs[i];
 }
 
-IntrusiveRefCntPtr<ExternalSemaSource> clang::createChainedIncludesSource(
-    CompilerInstance &CI, IntrusiveRefCntPtr<ExternalSemaSource> &Reader) {
+IntrusiveRefCntPtr<ChainedIncludesSource>
+ChainedIncludesSource::create(CompilerInstance &CI) {
 
   std::vector<std::string> &includes = CI.getPreprocessorOpts().ChainedIncludes;
   assert(!includes.empty() && "No '-chain-include' in options!");
@@ -146,9 +99,9 @@ IntrusiveRefCntPtr<ExternalSemaSource> clang::createChainedIncludesSource(
 
     std::unique_ptr<CompilerInstance> Clang(new CompilerInstance());
     Clang->setInvocation(CInvok.release());
-    Clang->setDiagnostics(Diags.get());
-    Clang->setTarget(TargetInfo::CreateTargetInfo(
-        Clang->getDiagnostics(), Clang->getInvocation().TargetOpts));
+    Clang->setDiagnostics(Diags.getPtr());
+    Clang->setTarget(TargetInfo::CreateTargetInfo(Clang->getDiagnostics(),
+                                                  &Clang->getTargetOpts()));
     Clang->createFileManager();
     Clang->createSourceManager(Clang->getFileManager());
     Clang->createPreprocessor(TU_Prefix);
@@ -173,14 +126,17 @@ IntrusiveRefCntPtr<ExternalSemaSource> clang::createChainedIncludesSource(
     } else {
       assert(!serialBufs.empty());
       SmallVector<llvm::MemoryBuffer *, 4> bufs;
-      // TODO: Pass through the existing MemoryBuffer instances instead of
-      // allocating new ones.
-      for (auto *SB : serialBufs)
-        bufs.push_back(llvm::MemoryBuffer::getMemBuffer(SB->getBuffer()));
+      for (unsigned si = 0, se = serialBufs.size(); si != se; ++si) {
+        bufs.push_back(llvm::MemoryBuffer::getMemBufferCopy(
+                             StringRef(serialBufs[si]->getBufferStart(),
+                                             serialBufs[si]->getBufferSize())));
+      }
       std::string pchName = includes[i-1];
       llvm::raw_string_ostream os(pchName);
       os << ".pch" << i-1;
-      serialBufNames.push_back(os.str());
+      os.flush();
+      
+      serialBufNames.push_back(pchName);
 
       IntrusiveRefCntPtr<ASTReader> Reader;
       Reader = createASTReader(*Clang, pchName, bufs, serialBufNames, 
@@ -195,14 +151,18 @@ IntrusiveRefCntPtr<ExternalSemaSource> clang::createChainedIncludesSource(
       return nullptr;
 
     ParseAST(Clang->getSema());
+    OS.flush();
     Clang->getDiagnosticClient().EndSourceFile();
-    serialBufs.push_back(llvm::MemoryBuffer::getMemBufferCopy(OS.str()));
+    serialBufs.push_back(
+      llvm::MemoryBuffer::getMemBufferCopy(StringRef(serialAST.data(),
+                                                           serialAST.size())));
     source->CIs.push_back(Clang.release());
   }
 
   assert(!serialBufs.empty());
   std::string pchName = includes.back() + ".pch-final";
   serialBufNames.push_back(pchName);
+  IntrusiveRefCntPtr<ASTReader> Reader;
   Reader = createASTReader(CI, pchName, serialBufs, serialBufNames);
   if (!Reader)
     return nullptr;

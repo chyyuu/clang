@@ -863,12 +863,7 @@ ExprResult Parser::ParseCastExpression(bool isUnaryExpression,
     //     ++ cast-expression
     //     -- cast-expression
     SourceLocation SavedLoc = ConsumeToken();
-    // One special case is implicitly handled here: if the preceding tokens are
-    // an ambiguous cast expression, such as "(T())++", then we recurse to
-    // determine whether the '++' is prefix or postfix.
-    Res = ParseCastExpression(!getLangOpts().CPlusPlus,
-                              /*isAddressOfOperand*/false, NotCastExpr,
-                              NotTypeCast);
+    Res = ParseCastExpression(!getLangOpts().CPlusPlus);
     if (!Res.isInvalid())
       Res = Actions.ActOnUnaryOp(getCurScope(), SavedLoc, SavedKind, Res.get());
     return Res;
@@ -2314,7 +2309,6 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr*> &Exprs,
                                                          Expr *Data,
                                                          ArrayRef<Expr *> Args),
                                  Expr *Data) {
-  bool SawError = false;
   while (1) {
     if (Tok.is(tok::code_completion)) {
       if (Completer)
@@ -2334,15 +2328,13 @@ bool Parser::ParseExpressionList(SmallVectorImpl<Expr*> &Exprs,
 
     if (Tok.is(tok::ellipsis))
       Expr = Actions.ActOnPackExpansion(Expr.get(), ConsumeToken());    
-    if (Expr.isInvalid()) {
-      SkipUntil(tok::comma, tok::r_paren, StopBeforeMatch);
-      SawError = true;
-    } else {
-      Exprs.push_back(Expr.get());
-    }
+    if (Expr.isInvalid())
+      return true;
+
+    Exprs.push_back(Expr.get());
 
     if (Tok.isNot(tok::comma))
-      return SawError;
+      return false;
     // Move to the next argument, remember where the comma was.
     CommaLocs.push_back(ConsumeToken());
   }

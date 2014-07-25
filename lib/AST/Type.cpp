@@ -1950,8 +1950,10 @@ void SubstTemplateTypeParmPackType::Profile(llvm::FoldingSetNodeID &ID,
                                             const TemplateArgument &ArgPack) {
   ID.AddPointer(Replaced);
   ID.AddInteger(ArgPack.pack_size());
-  for (const auto &P : ArgPack.pack_elements())
-    ID.AddPointer(P.getAsType().getAsOpaquePtr());
+  for (TemplateArgument::pack_iterator P = ArgPack.pack_begin(), 
+                                    PEnd = ArgPack.pack_end();
+       P != PEnd; ++P)
+    ID.AddPointer(P->getAsType().getAsOpaquePtr());
 }
 
 bool TemplateSpecializationType::

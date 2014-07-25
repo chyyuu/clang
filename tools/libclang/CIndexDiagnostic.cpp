@@ -412,7 +412,7 @@ unsigned clang_getDiagnosticCategory(CXDiagnostic Diag) {
 }
   
 CXString clang_getDiagnosticCategoryName(unsigned Category) {
-  // Kept for backward compatibility.
+  // Kept for backwards compatibility.
   return cxstring::createRef(DiagnosticIDs::getCategoryNameFromID(Category));
 }
   

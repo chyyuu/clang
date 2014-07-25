@@ -259,8 +259,6 @@ public:
 /// The main grunt class. This represents an instantiation of an intrinsic with
 /// a particular typespec and prototype.
 class Intrinsic {
-  friend class DagEmitter;
-
   /// The Record this intrinsic was created from.
   Record *R;
   /// The unmangled name and prototype.
@@ -281,9 +279,6 @@ class Intrinsic {
   /// Set if the Unvailable bit is 1. This means we don't generate a body,
   /// just an "unavailable" attribute on a declaration.
   bool IsUnavailable;
-  /// Is this intrinsic safe for big-endian? or does it need its arguments
-  /// reversing?
-  bool BigEndianSafe;
 
   /// The types of return value [0] and parameters [1..].
   std::vector<Type> Types;
@@ -310,11 +305,11 @@ class Intrinsic {
 public:
   Intrinsic(Record *R, StringRef Name, StringRef Proto, TypeSpec OutTS,
             TypeSpec InTS, ClassKind CK, ListInit *Body, NeonEmitter &Emitter,
-            StringRef Guard, bool IsUnavailable, bool BigEndianSafe)
+            StringRef Guard, bool IsUnavailable)
       : R(R), Name(Name.str()), Proto(Proto.str()), OutTS(OutTS), InTS(InTS),
         CK(CK), Body(Body), Guard(Guard.str()), IsUnavailable(IsUnavailable),
-        BigEndianSafe(BigEndianSafe), NeededEarly(false), UseMacro(false),
-        BaseType(OutTS, 'd'), InBaseType(InTS, 'd'), Emitter(Emitter) {
+        NeededEarly(false), UseMacro(false), BaseType(OutTS, 'd'),
+        InBaseType(InTS, 'd'), Emitter(Emitter) {
     // If this builtin takes an immediate argument, we need to #define it rather
     // than use a standard declaration, so that SemaChecking can range check
     // the immediate passed by the user.
@@ -440,41 +435,25 @@ private:
   std::string replaceParamsIn(std::string S);
 
   void emitBodyAsBuiltinCall();
+  std::pair<Type, std::string> emitDagArg(Init *Arg, std::string ArgName);
+  std::pair<Type, std::string> emitDagSaveTemp(DagInit *DI);
+  std::pair<Type, std::string> emitDagSplat(DagInit *DI);
+  std::pair<Type, std::string> emitDagDup(DagInit *DI);
+  std::pair<Type, std::string> emitDagShuffle(DagInit *DI);
+  std::pair<Type, std::string> emitDagCast(DagInit *DI, bool IsBitCast);
+  std::pair<Type, std::string> emitDagCall(DagInit *DI);
+  std::pair<Type, std::string> emitDagNameReplace(DagInit *DI);
+  std::pair<Type, std::string> emitDagLiteral(DagInit *DI);
+  std::pair<Type, std::string> emitDagOp(DagInit *DI);
+  std::pair<Type, std::string> emitDag(DagInit *DI);
 
-  void generateImpl(bool ReverseArguments,
-                    StringRef NamePrefix, StringRef CallPrefix);
   void emitReturn();
-  void emitBody(StringRef CallPrefix);
+  void emitBody();
   void emitShadowedArgs();
-  void emitArgumentReversal();
-  void emitReturnReversal();
-  void emitReverseVariable(Variable &Dest, Variable &Src);
   void emitNewLine();
   void emitClosingBrace();
   void emitOpeningBrace();
-  void emitPrototype(StringRef NamePrefix);
-
-  class DagEmitter {
-    Intrinsic &Intr;
-    StringRef CallPrefix;
-
-  public:
-    DagEmitter(Intrinsic &Intr, StringRef CallPrefix) :
-      Intr(Intr), CallPrefix(CallPrefix) {
-    }
-    std::pair<Type, std::string> emitDagArg(Init *Arg, std::string ArgName);
-    std::pair<Type, std::string> emitDagSaveTemp(DagInit *DI);
-    std::pair<Type, std::string> emitDagSplat(DagInit *DI);
-    std::pair<Type, std::string> emitDagDup(DagInit *DI);
-    std::pair<Type, std::string> emitDagShuffle(DagInit *DI);
-    std::pair<Type, std::string> emitDagCast(DagInit *DI, bool IsBitCast);
-    std::pair<Type, std::string> emitDagCall(DagInit *DI);
-    std::pair<Type, std::string> emitDagNameReplace(DagInit *DI);
-    std::pair<Type, std::string> emitDagLiteral(DagInit *DI);
-    std::pair<Type, std::string> emitDagOp(DagInit *DI);
-    std::pair<Type, std::string> emitDag(DagInit *DI);
-  };
-
+  void emitPrototype();
 };
 
 //===----------------------------------------------------------------------===//
@@ -1124,13 +1103,13 @@ void Intrinsic::initVariables() {
   RetVar = Variable(Types[0], "ret" + VariablePostfix);
 }
 
-void Intrinsic::emitPrototype(StringRef NamePrefix) {
+void Intrinsic::emitPrototype() {
   if (UseMacro)
     OS << "#define ";
   else
     OS << "__ai " << Types[0].str() << " ";
 
-  OS << NamePrefix.str() << mangleName(Name, ClassS) << "(";
+  OS << mangleName(Name, ClassS) << "(";
 
   for (unsigned I = 0; I < getNumParams(); ++I) {
     if (I != 0)
@@ -1172,61 +1151,6 @@ void Intrinsic::emitNewLine() {
     OS << "\n";
 }
 
-void Intrinsic::emitReverseVariable(Variable &Dest, Variable &Src) {
-  if (Dest.getType().getNumVectors() > 1) {
-    emitNewLine();
-
-    for (unsigned K = 0; K < Dest.getType().getNumVectors(); ++K) {
-      OS << "  " << Dest.getName() << ".val[" << utostr(K) << "] = "
-         << "__builtin_shufflevector("
-         << Src.getName() << ".val[" << utostr(K) << "], "
-         << Src.getName() << ".val[" << utostr(K) << "]";
-      for (int J = Dest.getType().getNumElements() - 1; J >= 0; --J)
-        OS << ", " << utostr(J);
-      OS << ");";
-      emitNewLine();
-    }
-  } else {
-    OS << "  " << Dest.getName()
-       << " = __builtin_shufflevector(" << Src.getName() << ", " << Src.getName();
-    for (int J = Dest.getType().getNumElements() - 1; J >= 0; --J)
-      OS << ", " << utostr(J);
-    OS << ");";
-    emitNewLine();
-  }
-}
-
-void Intrinsic::emitArgumentReversal() {
-  if (BigEndianSafe)
-    return;
-
-  // Reverse all vector arguments.
-  for (unsigned I = 0; I < getNumParams(); ++I) {
-    std::string Name = "p" + utostr(I);
-    std::string NewName = "rev" + utostr(I);
-
-    Variable &V = Variables[Name];
-    Variable NewV(V.getType(), NewName + VariablePostfix);
-
-    if (!NewV.getType().isVector() || NewV.getType().getNumElements() == 1)
-      continue;
-
-    OS << "  " << NewV.getType().str() << " " << NewV.getName() << ";";
-    emitReverseVariable(NewV, V);
-    V = NewV;
-  }
-}
-
-void Intrinsic::emitReturnReversal() {
-  if (BigEndianSafe)
-    return;
-  if (!getReturnType().isVector() || getReturnType().isVoid() ||
-      getReturnType().getNumElements() == 1)
-    return;
-  emitReverseVariable(RetVar, RetVar);
-}
-
-
 void Intrinsic::emitShadowedArgs() {
   // Macro arguments are not type-checked like inline function arguments,
   // so assign them to local temporaries to get the right type checking.
@@ -1243,7 +1167,9 @@ void Intrinsic::emitShadowedArgs() {
     if (getParamType(I).isPointer())
       continue;
 
-    std::string Name = "p" + utostr(I);
+    char NameC = '0' + I;
+    std::string Name = "p";
+    Name.push_back(NameC);
 
     assert(Variables.find(Name) != Variables.end());
     Variable &V = Variables[Name];
@@ -1367,7 +1293,7 @@ void Intrinsic::emitBodyAsBuiltinCall() {
   emitNewLine();
 }
 
-void Intrinsic::emitBody(StringRef CallPrefix) {
+void Intrinsic::emitBody() {
   std::vector<std::string> Lines;
 
   assert(RetVar.getType() == Types[0]);
@@ -1388,8 +1314,7 @@ void Intrinsic::emitBody(StringRef CallPrefix) {
     if (StringInit *SI = dyn_cast<StringInit>(I)) {
       Lines.push_back(replaceParamsIn(SI->getAsString()));
     } else if (DagInit *DI = dyn_cast<DagInit>(I)) {
-      DagEmitter DE(*this, CallPrefix);
-      Lines.push_back(DE.emitDag(DI).second + ";");
+      Lines.push_back(emitDag(DI).second + ";");
     }
   }
 
@@ -1413,7 +1338,7 @@ void Intrinsic::emitReturn() {
   emitNewLine();
 }
 
-std::pair<Type, std::string> Intrinsic::DagEmitter::emitDag(DagInit *DI) {
+std::pair<Type, std::string> Intrinsic::emitDag(DagInit *DI) {
   // At this point we should only be seeing a def.
   DefInit *DefI = cast<DefInit>(DI->getOperator());
   std::string Op = DefI->getAsString();
@@ -1440,7 +1365,7 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDag(DagInit *DI) {
   return std::make_pair(Type::getVoid(), "");
 }
 
-std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagOp(DagInit *DI) {
+std::pair<Type, std::string> Intrinsic::emitDagOp(DagInit *DI) {
   std::string Op = cast<StringInit>(DI->getArg(0))->getAsUnquotedString();
   if (DI->getNumArgs() == 2) {
     // Unary op.
@@ -1458,7 +1383,7 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagOp(DagInit *DI) {
   }
 }
 
-std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagCall(DagInit *DI) {
+std::pair<Type, std::string> Intrinsic::emitDagCall(DagInit *DI) {
   std::vector<Type> Types;
   std::vector<std::string> Values;
   for (unsigned I = 0; I < DI->getNumArgs() - 1; ++I) {
@@ -1474,15 +1399,15 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagCall(DagInit *DI) {
     N = SI->getAsUnquotedString();
   else
     N = emitDagArg(DI->getArg(0), "").second;
-  Intrinsic *Callee = Intr.Emitter.getIntrinsic(N, Types);
+  Intrinsic *Callee = Emitter.getIntrinsic(N, Types);
   assert(Callee && "getIntrinsic should not return us nullptr!");
 
   // Make sure the callee is known as an early def.
   Callee->setNeededEarly();
-  Intr.Dependencies.insert(Callee);
+  Dependencies.insert(Callee);
 
   // Now create the call itself.
-  std::string S = CallPrefix.str() + Callee->getMangledName(true) + "(";
+  std::string S = Callee->getMangledName(true) + "(";
   for (unsigned I = 0; I < DI->getNumArgs() - 1; ++I) {
     if (I != 0)
       S += ", ";
@@ -1493,8 +1418,8 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagCall(DagInit *DI) {
   return std::make_pair(Callee->getReturnType(), S);
 }
 
-std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagCast(DagInit *DI,
-                                                                bool IsBitCast){
+std::pair<Type, std::string> Intrinsic::emitDagCast(DagInit *DI,
+                                                    bool IsBitCast) {
   // (cast MOD* VAL) -> cast VAL to type given by MOD.
   std::pair<Type, std::string> R = emitDagArg(
       DI->getArg(DI->getNumArgs() - 1), DI->getArgName(DI->getNumArgs() - 1));
@@ -1509,16 +1434,15 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagCast(DagInit *DI,
     //   5. The value "H" or "D" to half or double the bitwidth.
     //   6. The value "8" to convert to 8-bit (signed) integer lanes.
     if (DI->getArgName(ArgIdx).size()) {
-      assert_with_loc(Intr.Variables.find(DI->getArgName(ArgIdx)) !=
-                      Intr.Variables.end(),
+      assert_with_loc(Variables.find(DI->getArgName(ArgIdx)) != Variables.end(),
                       "Variable not found");
-      castToType = Intr.Variables[DI->getArgName(ArgIdx)].getType();
+      castToType = Variables[DI->getArgName(ArgIdx)].getType();
     } else {
       StringInit *SI = dyn_cast<StringInit>(DI->getArg(ArgIdx));
       assert_with_loc(SI, "Expected string type or $Name for cast type");
 
       if (SI->getAsUnquotedString() == "R") {
-        castToType = Intr.getReturnType();
+        castToType = getReturnType();
       } else if (SI->getAsUnquotedString() == "U") {
         castToType.makeUnsigned();
       } else if (SI->getAsUnquotedString() == "S") {
@@ -1542,15 +1466,15 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagCast(DagInit *DI,
     // a temporary.
     std::string N = "reint";
     unsigned I = 0;
-    while (Intr.Variables.find(N) != Intr.Variables.end())
+    while (Variables.find(N) != Variables.end())
       N = "reint" + utostr(++I);
-    Intr.Variables[N] = Variable(R.first, N + Intr.VariablePostfix);
+    Variables[N] = Variable(R.first, N + VariablePostfix);
 
-    Intr.OS << R.first.str() << " " << Intr.Variables[N].getName() << " = "
-            << R.second << ";";
-    Intr.emitNewLine();
+    OS << R.first.str() << " " << Variables[N].getName() << " = " << R.second
+       << ";";
+    emitNewLine();
 
-    S = "*(" + castToType.str() + " *) &" + Intr.Variables[N].getName() + "";
+    S = "*(" + castToType.str() + " *) &" + Variables[N].getName() + "";
   } else {
     // Emit a normal (static) cast.
     S = "(" + castToType.str() + ")(" + R.second + ")";
@@ -1559,7 +1483,7 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagCast(DagInit *DI,
   return std::make_pair(castToType, S);
 }
 
-std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagShuffle(DagInit *DI){
+std::pair<Type, std::string> Intrinsic::emitDagShuffle(DagInit *DI) {
   // See the documentation in arm_neon.td for a description of these operators.
   class LowHalf : public SetTheory::Operator {
   public:
@@ -1674,12 +1598,12 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagShuffle(DagInit *DI){
   return std::make_pair(T, S);
 }
 
-std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagDup(DagInit *DI) {
+std::pair<Type, std::string> Intrinsic::emitDagDup(DagInit *DI) {
   assert_with_loc(DI->getNumArgs() == 1, "dup() expects one argument");
   std::pair<Type, std::string> A = emitDagArg(DI->getArg(0), DI->getArgName(0));
   assert_with_loc(A.first.isScalar(), "dup() expects a scalar argument");
 
-  Type T = Intr.getBaseType();
+  Type T = getBaseType();
   assert_with_loc(T.isVector(), "dup() used but default type is scalar!");
   std::string S = "(" + T.str() + ") {";
   for (unsigned I = 0; I < T.getNumElements(); ++I) {
@@ -1692,7 +1616,7 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagDup(DagInit *DI) {
   return std::make_pair(T, S);
 }
 
-std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagSplat(DagInit *DI) {
+std::pair<Type, std::string> Intrinsic::emitDagSplat(DagInit *DI) {
   assert_with_loc(DI->getNumArgs() == 2, "splat() expects two arguments");
   std::pair<Type, std::string> A = emitDagArg(DI->getArg(0), DI->getArgName(0));
   std::pair<Type, std::string> B = emitDagArg(DI->getArg(1), DI->getArgName(1));
@@ -1701,15 +1625,15 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagSplat(DagInit *DI) {
                   "splat() requires a scalar int as the second argument");
 
   std::string S = "__builtin_shufflevector(" + A.second + ", " + A.second;
-  for (unsigned I = 0; I < Intr.getBaseType().getNumElements(); ++I) {
+  for (unsigned I = 0; I < BaseType.getNumElements(); ++I) {
     S += ", " + B.second;
   }
   S += ")";
 
-  return std::make_pair(Intr.getBaseType(), S);
+  return std::make_pair(BaseType, S);
 }
 
-std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagSaveTemp(DagInit *DI) {
+std::pair<Type, std::string> Intrinsic::emitDagSaveTemp(DagInit *DI) {
   assert_with_loc(DI->getNumArgs() == 2, "save_temp() expects two arguments");
   std::pair<Type, std::string> A = emitDagArg(DI->getArg(1), DI->getArgName(1));
 
@@ -1719,19 +1643,18 @@ std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagSaveTemp(DagInit *DI)
   std::string N = DI->getArgName(0);
   assert_with_loc(N.size(), "save_temp() expects a name as the first argument");
 
-  assert_with_loc(Intr.Variables.find(N) == Intr.Variables.end(),
+  assert_with_loc(Variables.find(N) == Variables.end(),
                   "Variable already defined!");
-  Intr.Variables[N] = Variable(A.first, N + Intr.VariablePostfix);
+  Variables[N] = Variable(A.first, N + VariablePostfix);
 
   std::string S =
-      A.first.str() + " " + Intr.Variables[N].getName() + " = " + A.second;
+      A.first.str() + " " + Variables[N].getName() + " = " + A.second;
 
   return std::make_pair(Type::getVoid(), S);
 }
 
-std::pair<Type, std::string>
-Intrinsic::DagEmitter::emitDagNameReplace(DagInit *DI) {
-  std::string S = Intr.Name;
+std::pair<Type, std::string> Intrinsic::emitDagNameReplace(DagInit *DI) {
+  std::string S = Name;
 
   assert_with_loc(DI->getNumArgs() == 2, "name_replace requires 2 arguments!");
   std::string ToReplace = cast<StringInit>(DI->getArg(0))->getAsUnquotedString();
@@ -1745,20 +1668,20 @@ Intrinsic::DagEmitter::emitDagNameReplace(DagInit *DI) {
   return std::make_pair(Type::getVoid(), S);
 }
 
-std::pair<Type, std::string> Intrinsic::DagEmitter::emitDagLiteral(DagInit *DI){
+std::pair<Type, std::string> Intrinsic::emitDagLiteral(DagInit *DI) {
   std::string Ty = cast<StringInit>(DI->getArg(0))->getAsUnquotedString();
   std::string Value = cast<StringInit>(DI->getArg(1))->getAsUnquotedString();
   return std::make_pair(Type::fromTypedefName(Ty), Value);
 }
 
-std::pair<Type, std::string>
-Intrinsic::DagEmitter::emitDagArg(Init *Arg, std::string ArgName) {
+std::pair<Type, std::string> Intrinsic::emitDagArg(Init *Arg,
+                                                   std::string ArgName) {
   if (ArgName.size()) {
     assert_with_loc(!Arg->isComplete(),
                     "Arguments must either be DAGs or names, not both!");
-    assert_with_loc(Intr.Variables.find(ArgName) != Intr.Variables.end(),
+    assert_with_loc(Variables.find(ArgName) != Variables.end(),
                     "Variable not defined!");
-    Variable &V = Intr.Variables[ArgName];
+    Variable &V = Variables[ArgName];
     return std::make_pair(V.getType(), V.getName());
   }
 
@@ -1770,35 +1693,6 @@ Intrinsic::DagEmitter::emitDagArg(Init *Arg, std::string ArgName) {
 }
 
 std::string Intrinsic::generate() {
-  // Little endian intrinsics are simple and don't require any argument
-  // swapping.
-  OS << "#ifdef __LITTLE_ENDIAN__\n";
-
-  generateImpl(false, "", "");
-
-  OS << "#else\n";
-
-  // Big endian intrinsics are more complex. The user intended these
-  // intrinsics to operate on a vector "as-if" loaded by (V)LDR,
-  // but we load as-if (V)LD1. So we should swap all arguments and
-  // swap the return value too.
-  //
-  // If we call sub-intrinsics, we should call a version that does
-  // not re-swap the arguments!
-  generateImpl(true, "", "__noswap_");
-
-  // If we're needed early, create a non-swapping variant for
-  // big-endian.
-  if (NeededEarly) {
-    generateImpl(false, "__noswap_", "__noswap_");
-  }
-  OS << "#endif\n\n";
-
-  return OS.str();
-}
-
-void Intrinsic::generateImpl(bool ReverseArguments,
-                             StringRef NamePrefix, StringRef CallPrefix) {
   CurrentRecord = R;
 
   // If we call a macro, our local variables may be corrupted due to
@@ -1814,31 +1708,28 @@ void Intrinsic::generateImpl(bool ReverseArguments,
 
   initVariables();
 
-  emitPrototype(NamePrefix);
+  emitPrototype();
 
   if (IsUnavailable) {
     OS << " __attribute__((unavailable));";
   } else {
     emitOpeningBrace();
     emitShadowedArgs();
-    if (ReverseArguments)
-      emitArgumentReversal();
-    emitBody(CallPrefix);
-    if (ReverseArguments)
-      emitReturnReversal();
+    emitBody();
     emitReturn();
     emitClosingBrace();
   }
   OS << "\n";
 
   CurrentRecord = nullptr;
+  return OS.str();
 }
 
 void Intrinsic::indexBody() {
   CurrentRecord = R;
 
   initVariables();
-  emitBody("");
+  emitBody();
   OS.str("");
 
   CurrentRecord = nullptr;
@@ -1905,7 +1796,6 @@ void NeonEmitter::createIntrinsic(Record *R,
   std::string Types = R->getValueAsString("Types");
   Record *OperationRec = R->getValueAsDef("Operation");
   bool CartesianProductOfTypes = R->getValueAsBit("CartesianProductOfTypes");
-  bool BigEndianSafe  = R->getValueAsBit("BigEndianSafe");
   std::string Guard = R->getValueAsString("ArchGuard");
   bool IsUnavailable = OperationRec->getValueAsBit("Unavailable");
 
@@ -1942,7 +1832,7 @@ void NeonEmitter::createIntrinsic(Record *R,
 
   for (auto &I : NewTypeSpecs) {
     Intrinsic *IT = new Intrinsic(R, Name, Proto, I.first, I.second, CK, Body,
-                                  *this, Guard, IsUnavailable, BigEndianSafe);
+                                  *this, Guard, IsUnavailable);
 
     IntrinsicMap[Name].push_back(IT);
     Out.push_back(IT);
@@ -2093,8 +1983,9 @@ NeonEmitter::genIntrinsicRangeCheckCode(raw_ostream &OS,
     // their own builtin as they use the non-splat variant.
     if (Def->hasSplat())
       continue;
-    // Functions which do not have an immediate do not need to have range
-    // checking code emitted.
+    // Functions which do not have an immediate do not ned to have range
+    // checking
+    // code emitted.
     if (!Def->hasImmediate())
       continue;
     if (Emitted.find(Def->getMangledName()) != Emitted.end())
@@ -2120,7 +2011,7 @@ NeonEmitter::genIntrinsicRangeCheckCode(raw_ostream &OS,
 
       UpperBound = utostr(Def->getReturnType().getElementSizeInBits() - 1);
     } else if (R->getValueAsBit("isShift")) {
-      // Builtins which are overloaded by type will need to have their upper
+      // Builtins which are overloaded by type will need to have thier upper
       // bound computed at Sema time based on the type constant.
 
       // Right shifts have an 'r' in the name, left shifts do not.

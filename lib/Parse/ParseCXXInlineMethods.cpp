@@ -337,8 +337,7 @@ void Parser::ParseLexedMethodDeclaration(LateParsedMethodDeclaration &LM) {
       } else
         DefArgResult = ParseAssignmentExpression();
       if (DefArgResult.isInvalid())
-        Actions.ActOnParamDefaultArgumentError(LM.DefaultArgs[I].Param,
-                                               EqualLoc);
+        Actions.ActOnParamDefaultArgumentError(LM.DefaultArgs[I].Param);
       else {
         if (!TryConsumeToken(tok::cxx_defaultarg_end)) {
           // The last two tokens are the terminator and the saved value of

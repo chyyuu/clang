@@ -311,7 +311,7 @@ static void addParameterValuesToBindings(const StackFrameContext *CalleeCtx,
 ArrayRef<ParmVarDecl*> AnyFunctionCall::parameters() const {
   const FunctionDecl *D = getDecl();
   if (!D)
-    return None;
+    return llvm::ArrayRef<ParmVarDecl*>();
   return D->parameters();
 }
 

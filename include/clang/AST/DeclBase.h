@@ -1000,7 +1000,7 @@ public:
   void print(raw_ostream &OS) const override;
 };
 
-typedef MutableArrayRef<NamedDecl *> DeclContextLookupResult;
+typedef llvm::MutableArrayRef<NamedDecl*> DeclContextLookupResult;
 
 typedef ArrayRef<NamedDecl *> DeclContextLookupConstResult;
 

@@ -102,12 +102,10 @@ def ext_cxx11_longlong : Extension<
 def warn_cxx98_compat_longlong : Warning<
   "'long long' is incompatible with C++98">,
   InGroup<CXX98CompatPedantic>, DefaultIgnore;
-def err_integer_literal_too_large : Error<
-  "integer literal is too large to be represented in any %select{signed |}0"
-  "integer type">;
-def ext_integer_literal_too_large_for_signed : ExtWarn<
-  "integer literal is too large to be represented in a signed integer type, "
-  "interpreting as unsigned">,
+def err_integer_too_large : Error<
+  "integer constant is larger than the largest unsigned integer type">;
+def ext_integer_too_large_for_signed : ExtWarn<
+  "integer constant is larger than the largest signed integer type">,
   InGroup<DiagGroup<"implicitly-unsigned-literal">>;
 
 // Sema && AST
@@ -140,7 +138,7 @@ def err_module_file_conflict : Error<"module '%0' found in both '%1' and '%2'">;
 
 // TransformActions
 // TODO: Use a custom category name to distinguish rewriter errors.
-def err_mt_message : Error<"[rewriter] %0">, SuppressInSystemHeader;
+def err_mt_message : Error<"[rewriter] %0">;
 def warn_mt_message : Warning<"[rewriter] %0">;
 def note_mt_message : Note<"[rewriter] %0">;
 

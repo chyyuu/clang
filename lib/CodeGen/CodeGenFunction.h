@@ -93,19 +93,6 @@ enum TypeEvaluationKind {
   TEK_Aggregate
 };
 
-class SuppressDebugLocation {
-  llvm::DebugLoc CurLoc;
-  llvm::IRBuilderBase &Builder;
-public:
-  SuppressDebugLocation(llvm::IRBuilderBase &Builder)
-      : CurLoc(Builder.getCurrentDebugLocation()), Builder(Builder) {
-    Builder.SetCurrentDebugLocation(llvm::DebugLoc());
-  }
-  ~SuppressDebugLocation() {
-    Builder.SetCurrentDebugLocation(CurLoc);
-  }
-};
-
 /// CodeGenFunction - This class organizes the per-function state that is used
 /// while generating LLVM code.
 class CodeGenFunction : public CodeGenTypeCache {
@@ -244,19 +231,12 @@ public:
   /// potentially higher performance penalties.
   unsigned char BoundsChecking;
 
+  /// \brief Whether any type-checking sanitizers are enabled. If \c false,
+  /// calls to EmitTypeCheck can be skipped.
+  bool SanitizePerformTypeCheck;
+
   /// \brief Sanitizer options to use for this function.
   const SanitizerOptions *SanOpts;
-
-  /// \brief True if CodeGen currently emits code implementing sanitizer checks.
-  bool IsSanitizerScope;
-
-  /// \brief RAII object to set/unset CodeGenFunction::IsSanitizerScope.
-  class SanitizerScope {
-    CodeGenFunction *CGF;
-  public:
-    SanitizerScope(CodeGenFunction *CGF);
-    ~SanitizerScope();
-  };
 
   /// In ARC, whether we should autorelease the return value.
   bool AutoreleaseResult;
@@ -1713,10 +1693,6 @@ public:
     TCK_DowncastReference
   };
 
-  /// \brief Whether any type-checking sanitizers are enabled. If \c false,
-  /// calls to EmitTypeCheck can be skipped.
-  bool sanitizePerformTypeCheck() const;
-
   /// \brief Emit a check that \p V is the address of storage of the
   /// appropriate size and alignment for an object of type \p Type.
   void EmitTypeCheck(TypeCheckKind TCK, SourceLocation Loc, llvm::Value *V,
@@ -1908,36 +1884,26 @@ public:
   void EmitObjCAtSynchronizedStmt(const ObjCAtSynchronizedStmt &S);
   void EmitObjCAutoreleasePoolStmt(const ObjCAutoreleasePoolStmt &S);
 
+  llvm::Constant *getUnwindResumeFn();
+  llvm::Constant *getUnwindResumeOrRethrowFn();
   void EnterCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock = false);
   void ExitCXXTryStmt(const CXXTryStmt &S, bool IsFnTryBlock = false);
 
   void EmitCXXTryStmt(const CXXTryStmt &S);
   void EmitSEHTryStmt(const SEHTryStmt &S);
-  void EmitSEHLeaveStmt(const SEHLeaveStmt &S);
   void EmitCXXForRangeStmt(const CXXForRangeStmt &S,
                            const ArrayRef<const Attr *> &Attrs = None);
 
   llvm::Function *EmitCapturedStmt(const CapturedStmt &S, CapturedRegionKind K);
-  llvm::Function *GenerateCapturedStmtFunction(const CapturedStmt &S);
+  llvm::Function *GenerateCapturedStmtFunction(const CapturedDecl *CD,
+                                               const RecordDecl *RD,
+                                               SourceLocation Loc);
   llvm::Value *GenerateCapturedStmtArgument(const CapturedStmt &S);
 
   void EmitOMPParallelDirective(const OMPParallelDirective &S);
   void EmitOMPSimdDirective(const OMPSimdDirective &S);
   void EmitOMPForDirective(const OMPForDirective &S);
   void EmitOMPSectionsDirective(const OMPSectionsDirective &S);
-  void EmitOMPSectionDirective(const OMPSectionDirective &S);
-  void EmitOMPSingleDirective(const OMPSingleDirective &S);
-  void EmitOMPMasterDirective(const OMPMasterDirective &S);
-  void EmitOMPCriticalDirective(const OMPCriticalDirective &S);
-  void EmitOMPParallelForDirective(const OMPParallelForDirective &S);
-  void EmitOMPParallelSectionsDirective(const OMPParallelSectionsDirective &S);
-  void EmitOMPTaskDirective(const OMPTaskDirective &S);
-  void EmitOMPTaskyieldDirective(const OMPTaskyieldDirective &S);
-  void EmitOMPBarrierDirective(const OMPBarrierDirective &S);
-  void EmitOMPTaskwaitDirective(const OMPTaskwaitDirective &S);
-  void EmitOMPFlushDirective(const OMPFlushDirective &S);
-  void EmitOMPOrderedDirective(const OMPOrderedDirective &S);
-  void EmitOMPAtomicDirective(const OMPAtomicDirective &S);
 
   //===--------------------------------------------------------------------===//
   //                         LValue Expression Emission
@@ -2344,7 +2310,7 @@ public:
   llvm::Value *EmitARCRetainScalarExpr(const Expr *expr);
   llvm::Value *EmitARCRetainAutoreleaseScalarExpr(const Expr *expr);
 
-  void EmitARCIntrinsicUse(ArrayRef<llvm::Value*> values);
+  void EmitARCIntrinsicUse(llvm::ArrayRef<llvm::Value*> values);
 
   static Destroyer destroyARCStrongImprecise;
   static Destroyer destroyARCStrongPrecise;

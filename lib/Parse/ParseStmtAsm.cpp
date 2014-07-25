@@ -322,22 +322,19 @@ StmtResult Parser::ParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
   SourceLocation EndLoc = AsmLoc;
   SmallVector<Token, 4> AsmToks;
 
-  bool SingleLineMode = true;
-  unsigned BraceNesting = 0;
-  unsigned short savedBraceCount = BraceCount;
+  bool InBraces = false;
+  unsigned short savedBraceCount = 0;
   bool InAsmComment = false;
   FileID FID;
   unsigned LineNo = 0;
   unsigned NumTokensRead = 0;
-  SmallVector<SourceLocation, 4> LBraceLocs;
-  bool SkippedStartOfLine = false;
+  SourceLocation LBraceLoc;
 
   if (Tok.is(tok::l_brace)) {
     // Braced inline asm: consume the opening brace.
-    SingleLineMode = false;
-    BraceNesting = 1;
-    EndLoc = ConsumeBrace();
-    LBraceLocs.push_back(EndLoc);
+    InBraces = true;
+    savedBraceCount = BraceCount;
+    EndLoc = LBraceLoc = ConsumeBrace();
     ++NumTokensRead;
   } else {
     // Single-line inline asm; compute which line it is on.
@@ -345,7 +342,6 @@ StmtResult Parser::ParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
         SrcMgr.getDecomposedExpansionLoc(EndLoc);
     FID = ExpAsmLoc.first;
     LineNo = SrcMgr.getLineNumber(FID, ExpAsmLoc.second);
-    LBraceLocs.push_back(SourceLocation());
   }
 
   SourceLocation TokLoc = Tok.getLocation();
@@ -354,69 +350,40 @@ StmtResult Parser::ParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
     if (isEofOrEom())
       break;
 
-    if (!InAsmComment && Tok.is(tok::l_brace)) {
-      // Consume the opening brace.
-      SkippedStartOfLine = Tok.isAtStartOfLine();
-      EndLoc = ConsumeBrace();
-      BraceNesting++;
-      LBraceLocs.push_back(EndLoc);
-      TokLoc = Tok.getLocation();
-      ++NumTokensRead;
-      continue;
-    } else if (!InAsmComment && Tok.is(tok::semi)) {
+    if (!InAsmComment && Tok.is(tok::semi)) {
       // A semicolon in an asm is the start of a comment.
       InAsmComment = true;
-      if (!SingleLineMode) {
+      if (InBraces) {
         // Compute which line the comment is on.
         std::pair<FileID, unsigned> ExpSemiLoc =
             SrcMgr.getDecomposedExpansionLoc(TokLoc);
         FID = ExpSemiLoc.first;
         LineNo = SrcMgr.getLineNumber(FID, ExpSemiLoc.second);
       }
-    } else if (SingleLineMode || InAsmComment) {
+    } else if (!InBraces || InAsmComment) {
       // If end-of-line is significant, check whether this token is on a
       // new line.
       std::pair<FileID, unsigned> ExpLoc =
           SrcMgr.getDecomposedExpansionLoc(TokLoc);
       if (ExpLoc.first != FID ||
           SrcMgr.getLineNumber(ExpLoc.first, ExpLoc.second) != LineNo) {
-        // If this is a single-line __asm, we're done, except if the next
-        // line begins with an __asm too, in which case we finish a comment
-        // if needed and then keep processing the next line as a single
-        // line __asm.
-        bool isAsm = Tok.is(tok::kw_asm);
-        if (SingleLineMode && !isAsm)
+        // If this is a single-line __asm, we're done.
+        if (!InBraces)
           break;
         // We're no longer in a comment.
         InAsmComment = false;
-        if (isAsm) {
-          LineNo = SrcMgr.getLineNumber(ExpLoc.first, ExpLoc.second);
-          SkippedStartOfLine = Tok.isAtStartOfLine();
-        }
       } else if (!InAsmComment && Tok.is(tok::r_brace)) {
-        // In MSVC mode, braces only participate in brace matching and
-        // separating the asm statements.  This is an intentional
-        // departure from the Apple gcc behavior.
-        if (!BraceNesting)
-          break;
+        // Single-line asm always ends when a closing brace is seen.
+        // FIXME: This is compatible with Apple gcc's -fasm-blocks; what
+        // does MSVC do here?
+        break;
       }
     }
-    if (!InAsmComment && BraceNesting && Tok.is(tok::r_brace) &&
-        BraceCount == (savedBraceCount + BraceNesting)) {
-      // Consume the closing brace.
-      SkippedStartOfLine = Tok.isAtStartOfLine();
+    if (!InAsmComment && InBraces && Tok.is(tok::r_brace) &&
+        BraceCount == (savedBraceCount + 1)) {
+      // Consume the closing brace, and finish
       EndLoc = ConsumeBrace();
-      BraceNesting--;
-      // Finish if all of the opened braces in the inline asm section were
-      // consumed.
-      if (BraceNesting == 0 && !SingleLineMode)
-        break;
-      else {
-        LBraceLocs.pop_back();
-        TokLoc = Tok.getLocation();
-        ++NumTokensRead;
-        continue;
-      }
+      break;
     }
 
     // Consume the next token; make sure we don't modify the brace count etc.
@@ -425,25 +392,17 @@ StmtResult Parser::ParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
     if (InAsmComment)
       PP.Lex(Tok);
     else {
-      // Set the token as the start of line if we skipped the original start
-      // of line token in case it was a nested brace.
-      if (SkippedStartOfLine)
-        Tok.setFlag(Token::StartOfLine);
       AsmToks.push_back(Tok);
       ConsumeAnyToken();
     }
     TokLoc = Tok.getLocation();
     ++NumTokensRead;
-    SkippedStartOfLine = false;
   } while (1);
 
-  if (BraceNesting && BraceCount != savedBraceCount) {
+  if (InBraces && BraceCount != savedBraceCount) {
     // __asm without closing brace (this can happen at EOF).
-    for (unsigned i = 0; i < BraceNesting; ++i) {
-      Diag(Tok, diag::err_expected) << tok::r_brace;
-      Diag(LBraceLocs.back(), diag::note_matching) << tok::l_brace;
-      LBraceLocs.pop_back();
-    }
+    Diag(Tok, diag::err_expected) << tok::r_brace;
+    Diag(LBraceLoc, diag::note_matching) << tok::l_brace;
     return StmtError();
   } else if (NumTokensRead == 0) {
     // Empty __asm.
@@ -472,12 +431,10 @@ StmtResult Parser::ParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
       Diag(AsmLoc, diag::err_msasm_unable_to_create_target) << Error;
   }
 
-  assert(!LBraceLocs.empty() && "Should have at least one location here");
-
   // If we don't support assembly, or the assembly is empty, we don't
   // need to instantiate the AsmParser, etc.
   if (!TheTarget || AsmToks.empty()) {
-    return Actions.ActOnMSAsmStmt(AsmLoc, LBraceLocs[0], AsmToks, StringRef(),
+    return Actions.ActOnMSAsmStmt(AsmLoc, LBraceLoc, AsmToks, StringRef(),
                                   /*NumOutputs*/ 0, /*NumInputs*/ 0,
                                   ConstraintRefs, ClobberRefs, Exprs, EndLoc);
   }
@@ -566,7 +523,7 @@ StmtResult Parser::ParseMicrosoftAsmStatement(SourceLocation AsmLoc) {
   }
 
   // FIXME: We should be passing source locations for better diagnostics.
-  return Actions.ActOnMSAsmStmt(AsmLoc, LBraceLocs[0], AsmToks, AsmStringIR,
+  return Actions.ActOnMSAsmStmt(AsmLoc, LBraceLoc, AsmToks, AsmStringIR,
                                 NumOutputs, NumInputs, ConstraintRefs,
                                 ClobberRefs, Exprs, EndLoc);
 }
@@ -601,7 +558,7 @@ StmtResult Parser::ParseAsmStatement(bool &msAsm) {
   }
   DeclSpec DS(AttrFactory);
   SourceLocation Loc = Tok.getLocation();
-  ParseTypeQualifierListOpt(DS, AR_VendorAttributesParsed);
+  ParseTypeQualifierListOpt(DS, true, false);
 
   // GNU asms accept, but warn, about type-qualifiers other than volatile.
   if (DS.getTypeQualifiers() & DeclSpec::TQ_const)

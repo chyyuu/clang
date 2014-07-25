@@ -808,8 +808,7 @@ void TextDiagnostic::emitDiagnosticLoc(SourceLocation Loc, PresumedLoc PLoc,
       if (DiagOpts->getFormat() == DiagnosticOptions::Msvc) {
         OS << ',';
         // Visual Studio 2010 or earlier expects column number to be off by one
-        if (LangOpts.MSCompatibilityVersion &&
-            LangOpts.MSCompatibilityVersion < 170000000)
+        if (LangOpts.MSCVersion && LangOpts.MSCVersion < 170000000)
           ColNo--;
       } else
         OS << ':';
@@ -1131,7 +1130,7 @@ void TextDiagnostic::emitSnippetAndCaret(
   std::string FixItInsertionLine = buildFixItInsertionLine(LineNo,
                                                            sourceColMap,
                                                            Hints, SM,
-                                                           DiagOpts.get());
+                                                           DiagOpts.getPtr());
 
   // If the source line is too long for our terminal, select only the
   // "interesting" source region within that line.

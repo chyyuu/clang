@@ -19,6 +19,7 @@
 #include "clang/Basic/LLVM.h"
 #include "clang/Basic/ObjCRuntime.h"
 #include "clang/Basic/Visibility.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include <string>
 
 namespace clang {
@@ -52,7 +53,7 @@ protected:
 
 /// \brief Keeps track of the various options that can be
 /// enabled, which controls the dialect of C or C++ that is accepted.
-class LangOptions : public LangOptionsBase {
+class LangOptions : public RefCountedBase<LangOptions>, public LangOptionsBase {
 public:
   typedef clang::Visibility Visibility;
   
@@ -87,11 +88,6 @@ public:
 
   /// \brief The name of the current module.
   std::string CurrentModule;
-
-  /// \brief The name of the module that the translation unit is an
-  /// implementation of. Prevents semantic imports, but does not otherwise
-  /// treat this as the CurrentModule.
-  std::string ImplementationOfModule;
 
   /// \brief Options for parsing comments.
   CommentOptions CommentOpts;

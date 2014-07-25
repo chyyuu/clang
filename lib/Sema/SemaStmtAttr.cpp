@@ -45,74 +45,45 @@ static Attr *handleFallThroughAttr(Sema &S, Stmt *St, const AttributeList &A,
 
 static Attr *handleLoopHintAttr(Sema &S, Stmt *St, const AttributeList &A,
                                 SourceRange) {
-  IdentifierLoc *PragmaNameLoc = A.getArgAsIdent(0);
-  IdentifierLoc *OptionLoc = A.getArgAsIdent(1);
-  IdentifierInfo *OptionInfo = OptionLoc->Ident;
-  IdentifierLoc *ValueLoc = A.getArgAsIdent(2);
-  IdentifierInfo *ValueInfo = ValueLoc ? ValueLoc->Ident : nullptr;
-  Expr *ValueExpr = A.getArgAsExpr(3);
-
-  assert(OptionInfo && "Attribute must have valid option info.");
-
   if (St->getStmtClass() != Stmt::DoStmtClass &&
       St->getStmtClass() != Stmt::ForStmtClass &&
       St->getStmtClass() != Stmt::CXXForRangeStmtClass &&
       St->getStmtClass() != Stmt::WhileStmtClass) {
-    const char *Pragma =
-        llvm::StringSwitch<const char *>(PragmaNameLoc->Ident->getName())
-            .Case("unroll", "#pragma unroll")
-            .Case("nounroll", "#pragma nounroll")
-            .Default("#pragma clang loop");
-    S.Diag(St->getLocStart(), diag::err_pragma_loop_precedes_nonloop) << Pragma;
+    S.Diag(St->getLocStart(), diag::err_pragma_loop_precedes_nonloop);
     return nullptr;
   }
 
-  LoopHintAttr::OptionType Option;
-  LoopHintAttr::Spelling Spelling;
-  if (PragmaNameLoc->Ident->getName() == "unroll") {
-    Option = ValueLoc ? LoopHintAttr::UnrollCount : LoopHintAttr::Unroll;
-    Spelling = LoopHintAttr::Pragma_unroll;
-  } else if (PragmaNameLoc->Ident->getName() == "nounroll") {
-    Option = LoopHintAttr::Unroll;
-    Spelling = LoopHintAttr::Pragma_nounroll;
-  } else {
-    Option = llvm::StringSwitch<LoopHintAttr::OptionType>(OptionInfo->getName())
-                 .Case("vectorize", LoopHintAttr::Vectorize)
-                 .Case("vectorize_width", LoopHintAttr::VectorizeWidth)
-                 .Case("interleave", LoopHintAttr::Interleave)
-                 .Case("interleave_count", LoopHintAttr::InterleaveCount)
-                 .Case("unroll", LoopHintAttr::Unroll)
-                 .Case("unroll_count", LoopHintAttr::UnrollCount)
-                 .Default(LoopHintAttr::Vectorize);
-    Spelling = LoopHintAttr::Pragma_clang_loop;
-  }
+  IdentifierLoc *OptionLoc = A.getArgAsIdent(0);
+  IdentifierInfo *OptionInfo = OptionLoc->Ident;
+  IdentifierLoc *ValueLoc = A.getArgAsIdent(1);
+  IdentifierInfo *ValueInfo = ValueLoc->Ident;
+  Expr *ValueExpr = A.getArgAsExpr(2);
+
+  assert(OptionInfo && "Attribute must have valid option info.");
+
+  LoopHintAttr::OptionType Option =
+      llvm::StringSwitch<LoopHintAttr::OptionType>(OptionInfo->getName())
+          .Case("vectorize", LoopHintAttr::Vectorize)
+          .Case("vectorize_width", LoopHintAttr::VectorizeWidth)
+          .Case("interleave", LoopHintAttr::Interleave)
+          .Case("interleave_count", LoopHintAttr::InterleaveCount)
+          .Case("unroll", LoopHintAttr::Unroll)
+          .Case("unroll_count", LoopHintAttr::UnrollCount)
+          .Default(LoopHintAttr::Vectorize);
 
   int ValueInt;
-  if (Option == LoopHintAttr::Unroll &&
-      Spelling == LoopHintAttr::Pragma_unroll) {
-    ValueInt = 1;
-  } else if (Option == LoopHintAttr::Unroll &&
-             Spelling == LoopHintAttr::Pragma_nounroll) {
-    ValueInt = 0;
-  } else if (Option == LoopHintAttr::Vectorize ||
-             Option == LoopHintAttr::Interleave ||
-             Option == LoopHintAttr::Unroll) {
-    // Unrolling uses the keyword "full" rather than "enable" to indicate full
-    // unrolling.
-    const char *TrueKeyword =
-        Option == LoopHintAttr::Unroll ? "full" : "enable";
+  if (Option == LoopHintAttr::Vectorize || Option == LoopHintAttr::Interleave ||
+      Option == LoopHintAttr::Unroll) {
     if (!ValueInfo) {
-      S.Diag(ValueLoc->Loc, diag::err_pragma_loop_invalid_keyword)
-          << TrueKeyword;
+      S.Diag(ValueLoc->Loc, diag::err_pragma_loop_invalid_keyword);
       return nullptr;
     }
     if (ValueInfo->isStr("disable"))
       ValueInt = 0;
-    else if (ValueInfo->getName() == TrueKeyword)
+    else if (ValueInfo->isStr("enable"))
       ValueInt = 1;
     else {
-      S.Diag(ValueLoc->Loc, diag::err_pragma_loop_invalid_keyword)
-          << TrueKeyword;
+      S.Diag(ValueLoc->Loc, diag::err_pragma_loop_invalid_keyword);
       return nullptr;
     }
   } else if (Option == LoopHintAttr::VectorizeWidth ||
@@ -129,24 +100,31 @@ static Attr *handleLoopHintAttr(Sema &S, Stmt *St, const AttributeList &A,
   } else
     llvm_unreachable("Unknown loop hint option");
 
-  return LoopHintAttr::CreateImplicit(S.Context, Spelling, Option, ValueInt,
+  return LoopHintAttr::CreateImplicit(S.Context, Option, ValueInt,
                                       A.getRange());
 }
 
-static void CheckForIncompatibleAttributes(
-    Sema &S, const SmallVectorImpl<const Attr *> &Attrs) {
-  // There are 3 categories of loop hints attributes: vectorize, interleave, and
-  // unroll. Each comes in two variants: a boolean form and a numeric form.  The
-  // boolean hints selectively enables/disables the transformation for the loop
-  // (for unroll, a nonzero value indicates full unrolling rather than enabling
-  // the transformation).  The numeric hint provides an integer hint (for
-  // example, unroll count) to the transformer. The following array accumulates
-  // the hints encountered while iterating through the attributes to check for
-  // compatibility.
+static void
+CheckForIncompatibleAttributes(Sema &S, SmallVectorImpl<const Attr *> &Attrs) {
+  // There are 3 categories of loop hints: vectorize, interleave, and
+  // unroll. Each comes in two variants: an enable/disable form and a
+  // form which takes a numeric argument. For example:
+  // unroll(enable|disable) and unroll_count(N). The following array
+  // accumulate the hints encountered while iterating through the
+  // attributes to check for compatibility.
   struct {
-    const LoopHintAttr *EnableAttr;
-    const LoopHintAttr *NumericAttr;
-  } HintAttrs[] = {{nullptr, nullptr}, {nullptr, nullptr}, {nullptr, nullptr}};
+    int EnableOptionId;
+    int NumericOptionId;
+    bool EnabledIsSet;
+    bool ValueIsSet;
+    bool Enabled;
+    int Value;
+  } Options[] = {{LoopHintAttr::Vectorize, LoopHintAttr::VectorizeWidth, false,
+                  false, false, 0},
+                 {LoopHintAttr::Interleave, LoopHintAttr::InterleaveCount,
+                  false, false, false, 0},
+                 {LoopHintAttr::Unroll, LoopHintAttr::UnrollCount, false, false,
+                  false, 0}};
 
   for (const auto *I : Attrs) {
     const LoopHintAttr *LH = dyn_cast<LoopHintAttr>(I);
@@ -156,52 +134,62 @@ static void CheckForIncompatibleAttributes(
       continue;
 
     int Option = LH->getOption();
+    int ValueInt = LH->getValue();
+
     int Category;
-    enum { Vectorize, Interleave, Unroll };
     switch (Option) {
     case LoopHintAttr::Vectorize:
     case LoopHintAttr::VectorizeWidth:
-      Category = Vectorize;
+      Category = 0;
       break;
     case LoopHintAttr::Interleave:
     case LoopHintAttr::InterleaveCount:
-      Category = Interleave;
+      Category = 1;
       break;
     case LoopHintAttr::Unroll:
     case LoopHintAttr::UnrollCount:
-      Category = Unroll;
+      Category = 2;
       break;
     };
 
-    auto &CategoryState = HintAttrs[Category];
-    SourceLocation OptionLoc = LH->getRange().getBegin();
-    const LoopHintAttr *PrevAttr;
+    auto &CategoryState = Options[Category];
+    SourceLocation ValueLoc = LH->getRange().getEnd();
     if (Option == LoopHintAttr::Vectorize ||
         Option == LoopHintAttr::Interleave || Option == LoopHintAttr::Unroll) {
       // Enable|disable hint.  For example, vectorize(enable).
-      PrevAttr = CategoryState.EnableAttr;
-      CategoryState.EnableAttr = LH;
+      if (CategoryState.EnabledIsSet) {
+        // Cannot specify enable/disable state twice.
+        S.Diag(ValueLoc, diag::err_pragma_loop_compatibility)
+            << /*Duplicate=*/true << LoopHintAttr::getOptionName(Option)
+            << LoopHintAttr::getValueName(CategoryState.Enabled)
+            << LoopHintAttr::getOptionName(Option)
+            << LoopHintAttr::getValueName(ValueInt);
+      }
+      CategoryState.EnabledIsSet = true;
+      CategoryState.Enabled = ValueInt;
     } else {
-      // Numeric hint.  For example, vectorize_width(8).
-      PrevAttr = CategoryState.NumericAttr;
-      CategoryState.NumericAttr = LH;
+      // Numeric hint.  For example, unroll_count(8).
+      if (CategoryState.ValueIsSet) {
+        // Cannot specify numeric hint twice.
+        S.Diag(ValueLoc, diag::err_pragma_loop_compatibility)
+            << /*Duplicate=*/true << LoopHintAttr::getOptionName(Option)
+            << CategoryState.Value << LoopHintAttr::getOptionName(Option)
+            << ValueInt;
+      }
+      CategoryState.ValueIsSet = true;
+      CategoryState.Value = ValueInt;
     }
 
-    if (PrevAttr)
-      // Cannot specify same type of attribute twice.
-      S.Diag(OptionLoc, diag::err_pragma_loop_compatibility)
-          << /*Duplicate=*/true << PrevAttr->getDiagnosticName()
-          << LH->getDiagnosticName();
-
-    if (CategoryState.EnableAttr && CategoryState.NumericAttr &&
-        (Category == Unroll || !CategoryState.EnableAttr->getValue())) {
-      // Disable hints are not compatible with numeric hints of the same
-      // category.  As a special case, numeric unroll hints are also not
-      // compatible with "enable" form of the unroll pragma, unroll(full).
-      S.Diag(OptionLoc, diag::err_pragma_loop_compatibility)
+    if (CategoryState.EnabledIsSet && !CategoryState.Enabled &&
+        CategoryState.ValueIsSet) {
+      // Disable hints are not compatible with numeric hints of the
+      // same category.
+      S.Diag(ValueLoc, diag::err_pragma_loop_compatibility)
           << /*Duplicate=*/false
-          << CategoryState.EnableAttr->getDiagnosticName()
-          << CategoryState.NumericAttr->getDiagnosticName();
+          << LoopHintAttr::getOptionName(CategoryState.EnableOptionId)
+          << LoopHintAttr::getValueName(CategoryState.Enabled)
+          << LoopHintAttr::getOptionName(CategoryState.NumericOptionId)
+          << CategoryState.Value;
     }
   }
 }

@@ -56,6 +56,8 @@ public:
 
   void applyMappings(PreprocessorOptions &PPOpts) const;
 
+  void transferMappingsAndClear(PreprocessorOptions &PPOpts);
+
   void clear(StringRef outputDir = StringRef());
 
 private:

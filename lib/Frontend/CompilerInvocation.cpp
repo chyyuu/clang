@@ -1208,7 +1208,7 @@ static Visibility parseVisibility(Arg *arg, ArgList &args,
 }
 
 static unsigned parseMSCVersion(ArgList &Args, DiagnosticsEngine &Diags) {
-  auto Arg = Args.getLastArg(OPT_fms_compatibility_version);
+  auto Arg = Args.getLastArg(OPT_fmsc_version);
   if (!Arg)
     return 0;
 
@@ -1225,8 +1225,25 @@ static unsigned parseMSCVersion(ArgList &Args, DiagnosticsEngine &Diags) {
   // Unfortunately, due to the bit-width limitations, we cannot currently encode
   // the value for the patch level.
 
-  unsigned VC[4] = {0};
   StringRef Value = Arg->getValue();
+
+  // parse the compatible old form of _MSC_VER or the newer _MSC_FULL_VER
+  if (Value.find('.') == StringRef::npos) {
+    unsigned Version = 0;
+    if (Value.getAsInteger(10, Version)) {
+      Diags.Report(diag::err_drv_invalid_value)
+        << Arg->getAsString(Args) << Value;
+      return 0;
+    }
+    if (Version < 100)
+      Version = Version * 100;    // major -> major.minor
+    if (Version < 100000)
+      Version = Version * 100000; // major.minor -> major.minor.build
+    return Version;
+  }
+
+  // parse the dot-delimited component version
+  unsigned VC[4] = {0};
   SmallVector<StringRef, 4> Components;
 
   Value.split(Components, ".", llvm::array_lengthof(VC));
@@ -1413,7 +1430,7 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.MSVCCompat = Args.hasArg(OPT_fms_compatibility);
   Opts.MicrosoftExt = Opts.MSVCCompat || Args.hasArg(OPT_fms_extensions);
   Opts.AsmBlocks = Args.hasArg(OPT_fasm_blocks) || Opts.MicrosoftExt;
-  Opts.MSCompatibilityVersion = parseMSCVersion(Args, Diags);
+  Opts.MSCVersion = parseMSCVersion(Args, Diags);
   Opts.VtorDispMode = getLastArgIntValue(Args, OPT_vtordisp_mode_EQ, 1, Diags);
   Opts.Borland = Args.hasArg(OPT_fborland_extensions);
   Opts.WritableStrings = Args.hasArg(OPT_fwritable_strings);
@@ -1430,7 +1447,6 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.TraditionalCPP = Args.hasArg(OPT_traditional_cpp);
 
   Opts.RTTI = !Args.hasArg(OPT_fno_rtti);
-  Opts.RTTIData = Opts.RTTI && !Args.hasArg(OPT_fno_rtti_data);
   Opts.Blocks = Args.hasArg(OPT_fblocks);
   Opts.BlocksRuntimeOptional = Args.hasArg(OPT_fblocks_runtime_optional);
   Opts.Modules = Args.hasArg(OPT_fmodules);
@@ -1495,14 +1511,6 @@ static void ParseLangArgs(LangOptions &Opts, ArgList &Args, InputKind IK,
   Opts.DebuggerObjCLiteral = Args.hasArg(OPT_fdebugger_objc_literal);
   Opts.ApplePragmaPack = Args.hasArg(OPT_fapple_pragma_pack);
   Opts.CurrentModule = Args.getLastArgValue(OPT_fmodule_name);
-  Opts.ImplementationOfModule =
-      Args.getLastArgValue(OPT_fmodule_implementation_of);
-
-  if (!Opts.CurrentModule.empty() && !Opts.ImplementationOfModule.empty() &&
-      Opts.CurrentModule != Opts.ImplementationOfModule) {
-    Diags.Report(diag::err_conflicting_module_names)
-        << Opts.CurrentModule << Opts.ImplementationOfModule;
-  }
 
   if (Arg *A = Args.getLastArg(OPT_faddress_space_map_mangling_EQ)) {
     switch (llvm::StringSwitch<unsigned>(A->getValue())
@@ -1948,16 +1956,14 @@ std::string CompilerInvocation::getModuleHash() const {
   //   $sysroot/System/Library/CoreServices/SystemVersion.plist
   // as part of the module hash.
   if (!hsOpts.Sysroot.empty()) {
+    std::unique_ptr<llvm::MemoryBuffer> buffer;
     SmallString<128> systemVersionFile;
     systemVersionFile += hsOpts.Sysroot;
     llvm::sys::path::append(systemVersionFile, "System");
     llvm::sys::path::append(systemVersionFile, "Library");
     llvm::sys::path::append(systemVersionFile, "CoreServices");
     llvm::sys::path::append(systemVersionFile, "SystemVersion.plist");
-
-    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> buffer =
-        llvm::MemoryBuffer::getFile(systemVersionFile.str());
-    if (buffer) {
+    if (!llvm::MemoryBuffer::getFile(systemVersionFile.str(), buffer)) {
       code = hash_combine(code, buffer.get()->getBuffer());
 
       struct stat statBuf;
@@ -2024,16 +2030,15 @@ createVFSFromCompilerInvocation(const CompilerInvocation &CI,
     Overlay(new vfs::OverlayFileSystem(vfs::getRealFileSystem()));
   // earlier vfs files are on the bottom
   for (const std::string &File : CI.getHeaderSearchOpts().VFSOverlayFiles) {
-    llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Buffer =
-        llvm::MemoryBuffer::getFile(File);
-    if (!Buffer) {
+    std::unique_ptr<llvm::MemoryBuffer> Buffer;
+    if (llvm::MemoryBuffer::getFile(File, Buffer)) {
       Diags.Report(diag::err_missing_vfs_overlay_file) << File;
       return IntrusiveRefCntPtr<vfs::FileSystem>();
     }
 
     IntrusiveRefCntPtr<vfs::FileSystem> FS =
-        vfs::getVFSFromYAML(Buffer->release(), /*DiagHandler*/ nullptr);
-    if (!FS.get()) {
+        vfs::getVFSFromYAML(Buffer.release(), /*DiagHandler*/nullptr);
+    if (!FS.getPtr()) {
       Diags.Report(diag::err_invalid_vfs_overlay) << File;
       return IntrusiveRefCntPtr<vfs::FileSystem>();
     }

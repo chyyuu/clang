@@ -31,7 +31,7 @@ USEDLIBS = clang.a \
 	   clangFormat.a \
 	   clangTooling.a \
 	   clangRewriteFrontend.a \
-	   clangRewrite.a \
+	   clangRewriteCore.a \
 	   clangFrontend.a clangDriver.a \
 	   clangStaticAnalyzerCheckers.a clangStaticAnalyzerCore.a \
 	   clangSerialization.a clangParse.a clangSema.a \

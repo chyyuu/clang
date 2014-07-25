@@ -79,7 +79,7 @@ public:
   /// namedDecl and varDecl are excluded in a FunctionDecl context, because
   /// those matchers would match respectively all or no nodes in such a context.
   static std::vector<MatcherCompletion>
-  getCompletions(ArrayRef<std::pair<MatcherCtor, unsigned> > Context);
+  getCompletions(llvm::ArrayRef<std::pair<MatcherCtor, unsigned> > Context);
 
   /// \brief Construct a matcher from the registry.
   ///

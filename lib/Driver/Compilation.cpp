@@ -17,6 +17,8 @@
 #include "llvm/Option/ArgList.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
+#include <errno.h>
+#include <sys/stat.h>
 
 using namespace clang::driver;
 using namespace clang;

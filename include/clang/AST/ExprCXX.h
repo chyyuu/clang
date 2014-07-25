@@ -737,8 +737,8 @@ public:
 
   /// Grabs __declspec(uuid()) off a type, or returns 0 if we cannot resolve to
   /// a single GUID.
-  static const UuidAttr *GetUuidAttrOfType(QualType QT,
-                                           bool *HasMultipleGUIDsPtr = nullptr);
+  static UuidAttr *GetUuidAttrOfType(QualType QT,
+                                     bool *HasMultipleGUIDsPtr = nullptr);
 
   // Iterators
   child_range children() {
@@ -1077,7 +1077,6 @@ private:
   bool Elidable : 1;
   bool HadMultipleCandidates : 1;
   bool ListInitialization : 1;
-  bool StdInitListInitialization : 1;
   bool ZeroInitialization : 1;
   unsigned ConstructKind : 2;
   Stmt **Args;
@@ -1089,7 +1088,6 @@ protected:
                    ArrayRef<Expr *> Args,
                    bool HadMultipleCandidates,
                    bool ListInitialization,
-                   bool StdInitListInitialization,
                    bool ZeroInitialization,
                    ConstructionKind ConstructKind,
                    SourceRange ParenOrBraceRange);
@@ -1116,7 +1114,6 @@ public:
                                   ArrayRef<Expr *> Args,
                                   bool HadMultipleCandidates,
                                   bool ListInitialization,
-                                  bool StdInitListInitialization,
                                   bool ZeroInitialization,
                                   ConstructionKind ConstructKind,
                                   SourceRange ParenOrBraceRange);
@@ -1139,13 +1136,6 @@ public:
   /// \brief Whether this constructor call was written as list-initialization.
   bool isListInitialization() const { return ListInitialization; }
   void setListInitialization(bool V) { ListInitialization = V; }
-
-  /// \brief Whether this constructor call was written as list-initialization,
-  /// but was interpreted as forming a std::initializer_list<T> from the list
-  /// and passing that as a single constructor argument.
-  /// See C++11 [over.match.list]p1 bullet 1.
-  bool isStdInitListInitialization() const { return StdInitListInitialization; }
-  void setStdInitListInitialization(bool V) { StdInitListInitialization = V; }
 
   /// \brief Whether this construction first requires
   /// zero-initialization before the initializer is called.
@@ -1282,7 +1272,6 @@ public:
                          SourceRange ParenOrBraceRange,
                          bool HadMultipleCandidates,
                          bool ListInitialization,
-                         bool StdInitListInitialization,
                          bool ZeroInitialization);
   explicit CXXTemporaryObjectExpr(EmptyShell Empty)
     : CXXConstructExpr(CXXTemporaryObjectExprClass, Empty), Type() { }

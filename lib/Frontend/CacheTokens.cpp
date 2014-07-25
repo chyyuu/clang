@@ -540,8 +540,7 @@ public:
   ~StatListener() {}
 
   LookupResult getStat(const char *Path, FileData &Data, bool isFile,
-                       std::unique_ptr<vfs::File> *F,
-                       vfs::FileSystem &FS) override {
+                       vfs::File **F, vfs::FileSystem &FS) override {
     LookupResult Result = statChained(Path, Data, isFile, F, FS);
 
     if (Result == CacheMissing) // Failed 'stat'.

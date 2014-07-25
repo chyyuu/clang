@@ -144,14 +144,15 @@ volatile int JSONAnchorSource = 0;
 JSONCompilationDatabase *
 JSONCompilationDatabase::loadFromFile(StringRef FilePath,
                                       std::string &ErrorMessage) {
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> DatabaseBuffer =
-      llvm::MemoryBuffer::getFile(FilePath);
-  if (std::error_code Result = DatabaseBuffer.getError()) {
+  std::unique_ptr<llvm::MemoryBuffer> DatabaseBuffer;
+  std::error_code Result =
+      llvm::MemoryBuffer::getFile(FilePath, DatabaseBuffer);
+  if (Result) {
     ErrorMessage = "Error while opening JSON database: " + Result.message();
     return nullptr;
   }
   std::unique_ptr<JSONCompilationDatabase> Database(
-      new JSONCompilationDatabase(DatabaseBuffer->release()));
+      new JSONCompilationDatabase(DatabaseBuffer.release()));
   if (!Database->parse(ErrorMessage))
     return nullptr;
   return Database.release();

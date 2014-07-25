@@ -163,8 +163,6 @@ class Parser : public CodeCompletionHandler {
   std::unique_ptr<PragmaHandler> MSSection;
   std::unique_ptr<PragmaHandler> OptimizeHandler;
   std::unique_ptr<PragmaHandler> LoopHintHandler;
-  std::unique_ptr<PragmaHandler> UnrollHintHandler;
-  std::unique_ptr<PragmaHandler> NoUnrollHintHandler;
 
   std::unique_ptr<CommentHandler> CommentSemaHandler;
 
@@ -266,7 +264,7 @@ public:
   typedef clang::TypeResult        TypeResult;
 
   typedef Expr *ExprArg;
-  typedef MutableArrayRef<Stmt*> MultiStmtArg;
+  typedef llvm::MutableArrayRef<Stmt*> MultiStmtArg;
   typedef Sema::FullExprArg FullExprArg;
 
   ExprResult ExprError() { return ExprResult(true); }
@@ -488,12 +486,12 @@ private:
   void HandlePragmaMSVtorDisp();
 
   void HandlePragmaMSPragma();
-  bool HandlePragmaMSSection(StringRef PragmaName,
-                             SourceLocation PragmaLocation);
-  bool HandlePragmaMSSegment(StringRef PragmaName,
-                             SourceLocation PragmaLocation);
-  bool HandlePragmaMSInitSeg(StringRef PragmaName,
-                             SourceLocation PragmaLocation);
+  unsigned HandlePragmaMSSection(llvm::StringRef PragmaName,
+                                 SourceLocation PragmaLocation);
+  unsigned HandlePragmaMSSegment(llvm::StringRef PragmaName,
+                                 SourceLocation PragmaLocation);
+  unsigned HandlePragmaMSInitSeg(llvm::StringRef PragmaName,
+                                 SourceLocation PragmaLocation);
 
   /// \brief Handle the annotation token produced for
   /// #pragma align...
@@ -524,7 +522,7 @@ private:
   StmtResult HandlePragmaCaptured();
 
   /// \brief Handle the annotation token produced for
-  /// #pragma clang loop and #pragma unroll.
+  /// #pragma vectorize...
   LoopHint HandlePragmaLoopHint();
 
   /// GetLookAheadToken - This peeks ahead N tokens and returns that token
@@ -726,7 +724,7 @@ private:
   /// returned.
   bool ExpectAndConsume(tok::TokenKind ExpectedTok,
                         unsigned Diag = diag::err_expected,
-                        StringRef DiagMsg = "");
+                        const char *DiagMsg = "");
 
   /// \brief The parser expects a semicolon and, if present, will consume it.
   ///
@@ -1670,7 +1668,6 @@ private:
   StmtResult ParseSEHTryBlockCommon(SourceLocation Loc);
   StmtResult ParseSEHExceptBlock(SourceLocation Loc);
   StmtResult ParseSEHFinallyBlock(SourceLocation Loc);
-  StmtResult ParseSEHLeaveStatement();
 
   //===--------------------------------------------------------------------===//
   // Objective-C Statements
@@ -2118,34 +2115,22 @@ private:
   void ParseAvailabilityAttribute(IdentifierInfo &Availability,
                                   SourceLocation AvailabilityLoc,
                                   ParsedAttributes &attrs,
-                                  SourceLocation *endLoc,
-                                  IdentifierInfo *ScopeName,
-                                  SourceLocation ScopeLoc,
-                                  AttributeList::Syntax Syntax);
-
+                                  SourceLocation *endLoc);
+  
   void ParseObjCBridgeRelatedAttribute(IdentifierInfo &ObjCBridgeRelated,
                                        SourceLocation ObjCBridgeRelatedLoc,
                                        ParsedAttributes &attrs,
-                                       SourceLocation *endLoc,
-                                       IdentifierInfo *ScopeName,
-                                       SourceLocation ScopeLoc,
-                                       AttributeList::Syntax Syntax);
+                                       SourceLocation *endLoc);
 
   void ParseTypeTagForDatatypeAttribute(IdentifierInfo &AttrName,
                                         SourceLocation AttrNameLoc,
                                         ParsedAttributes &Attrs,
-                                        SourceLocation *EndLoc,
-                                        IdentifierInfo *ScopeName,
-                                        SourceLocation ScopeLoc,
-                                        AttributeList::Syntax Syntax);
+                                        SourceLocation *EndLoc);
 
   void ParseAttributeWithTypeArg(IdentifierInfo &AttrName,
                                  SourceLocation AttrNameLoc,
                                  ParsedAttributes &Attrs,
-                                 SourceLocation *EndLoc,
-                                 IdentifierInfo *ScopeName,
-                                 SourceLocation ScopeLoc,
-                                 AttributeList::Syntax Syntax);
+                                 SourceLocation *EndLoc);
 
   void ParseTypeofSpecifier(DeclSpec &DS);
   SourceLocation ParseDecltypeSpecifier(DeclSpec &DS);
@@ -2208,21 +2193,8 @@ private:
   void ParseDeclaratorInternal(Declarator &D,
                                DirectDeclParseFunction DirectDeclParser);
 
-  enum AttrRequirements {
-    AR_NoAttributesParsed = 0, ///< No attributes are diagnosed.
-    AR_GNUAttributesParsedAndRejected = 1 << 0, ///< Diagnose GNU attributes.
-    AR_GNUAttributesParsed = 1 << 1,
-    AR_CXX11AttributesParsed = 1 << 2,
-    AR_DeclspecAttributesParsed = 1 << 3,
-    AR_AllAttributesParsed = AR_GNUAttributesParsed |
-                             AR_CXX11AttributesParsed |
-                             AR_DeclspecAttributesParsed,
-    AR_VendorAttributesParsed = AR_GNUAttributesParsed |
-                                AR_DeclspecAttributesParsed
-  };
-
-  void ParseTypeQualifierListOpt(DeclSpec &DS,
-                                 unsigned AttrReqs = AR_AllAttributesParsed,
+  void ParseTypeQualifierListOpt(DeclSpec &DS, bool GNUAttributesAllowed = true,
+                                 bool CXX11AttributesAllowed = true,
                                  bool AtomicAllowed = true,
                                  bool IdentifierRequired = false);
   void ParseDirectDeclarator(Declarator &D);
@@ -2354,12 +2326,7 @@ private:
                                 SmallVectorImpl<Expr *> &VarList,
                                 bool AllowScopeSpecifier);
   /// \brief Parses declarative or executable directive.
-  ///
-  /// \param StandAloneAllowed true if allowed stand-alone directives,
-  /// false - otherwise
-  ///
-  StmtResult
-  ParseOpenMPDeclarativeOrExecutableDirective(bool StandAloneAllowed);
+  StmtResult ParseOpenMPDeclarativeOrExecutableDirective();
   /// \brief Parses clause of kind \a CKind for directive of a kind \a Kind.
   ///
   /// \param DKind Kind of current directive.

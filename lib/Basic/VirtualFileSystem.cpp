@@ -126,13 +126,8 @@ std::error_code RealFile::getBuffer(const Twine &Name,
                                     bool RequiresNullTerminator,
                                     bool IsVolatile) {
   assert(FD != -1 && "cannot get buffer for closed file");
-  ErrorOr<std::unique_ptr<MemoryBuffer>> BufferOrErr =
-      MemoryBuffer::getOpenFile(FD, Name.str().c_str(), FileSize,
-                                RequiresNullTerminator, IsVolatile);
-  if (std::error_code EC = BufferOrErr.getError())
-    return EC;
-  Result = std::move(BufferOrErr.get());
-  return std::error_code();
+  return MemoryBuffer::getOpenFile(FD, Name.str().c_str(), Result, FileSize,
+                                   RequiresNullTerminator, IsVolatile);
 }
 
 // FIXME: This is terrible, we need this for ::close.
@@ -1101,34 +1096,35 @@ void JSONWriter::write(ArrayRef<YAMLVFSEntry> Entries,
        << (IsCaseSensitive.getValue() ? "true" : "false") << "',\n";
   OS << "  'roots': [\n";
 
-  if (!Entries.empty()) {
-    const YAMLVFSEntry &Entry = Entries.front();
-    startDirectory(path::parent_path(Entry.VPath));
-    writeEntry(path::filename(Entry.VPath), Entry.RPath);
+  if (Entries.empty())
+    return;
 
-    for (const auto &Entry : Entries.slice(1)) {
-      StringRef Dir = path::parent_path(Entry.VPath);
-      if (Dir == DirStack.back())
-        OS << ",\n";
-      else {
-        while (!DirStack.empty() && !containedIn(DirStack.back(), Dir)) {
-          OS << "\n";
-          endDirectory();
-        }
-        OS << ",\n";
-        startDirectory(Dir);
+  const YAMLVFSEntry &Entry = Entries.front();
+  startDirectory(path::parent_path(Entry.VPath));
+  writeEntry(path::filename(Entry.VPath), Entry.RPath);
+
+  for (const auto &Entry : Entries.slice(1)) {
+    StringRef Dir = path::parent_path(Entry.VPath);
+    if (Dir == DirStack.back())
+      OS << ",\n";
+    else {
+      while (!DirStack.empty() && !containedIn(DirStack.back(), Dir)) {
+        OS << "\n";
+        endDirectory();
       }
-      writeEntry(path::filename(Entry.VPath), Entry.RPath);
+      OS << ",\n";
+      startDirectory(Dir);
     }
-
-    while (!DirStack.empty()) {
-      OS << "\n";
-      endDirectory();
-    }
-    OS << "\n";
+    writeEntry(path::filename(Entry.VPath), Entry.RPath);
   }
 
-  OS << "  ]\n"
+  while (!DirStack.empty()) {
+    OS << "\n";
+    endDirectory();
+  }
+
+  OS << "\n"
+     << "  ]\n"
      << "}\n";
 }
 

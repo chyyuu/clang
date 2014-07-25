@@ -2516,7 +2516,7 @@ Decl *TemplateDeclInstantiator::VisitVarTemplateSpecializationDecl(
 Decl *TemplateDeclInstantiator::VisitVarTemplateSpecializationDecl(
     VarTemplateDecl *VarTemplate, VarDecl *D, void *InsertPos,
     const TemplateArgumentListInfo &TemplateArgsInfo,
-    ArrayRef<TemplateArgument> Converted) {
+    llvm::ArrayRef<TemplateArgument> Converted) {
 
   // If this is the variable for an anonymous struct or union,
   // instantiate the anonymous struct/union type first.
@@ -3679,9 +3679,8 @@ void Sema::InstantiateVariableInitializer(
       bool TypeMayContainAuto = true;
       Expr *InitExpr = Init.get();
 
-      if (Var->hasAttr<DLLImportAttr>() &&
-          (!InitExpr ||
-           !InitExpr->isConstantInitializer(getASTContext(), false))) {
+      if (Var->hasAttr<DLLImportAttr>() && InitExpr &&
+          !InitExpr->isConstantInitializer(getASTContext(), false)) {
         // Do not dynamically initialize dllimport variables.
       } else if (InitExpr) {
         bool DirectInit = OldVar->isDirectInit();

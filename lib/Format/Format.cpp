@@ -104,7 +104,7 @@ struct ScalarEnumerationTraits<FormatStyle::PointerAlignmentStyle> {
     IO.enumCase(Value, "Left", FormatStyle::PAS_Left);
     IO.enumCase(Value, "Right", FormatStyle::PAS_Right);
 
-    // For backward compatibility.
+    // For backward compability.
     IO.enumCase(Value, "true", FormatStyle::PAS_Left);
     IO.enumCase(Value, "false", FormatStyle::PAS_Right);
   }
@@ -191,10 +191,6 @@ template <> struct MappingTraits<FormatStyle> {
     IO.mapOptional("ExperimentalAutoDetectBinPacking",
                    Style.ExperimentalAutoDetectBinPacking);
     IO.mapOptional("IndentCaseLabels", Style.IndentCaseLabels);
-    IO.mapOptional("IndentWrappedFunctionNames",
-                   Style.IndentWrappedFunctionNames);
-    IO.mapOptional("IndentFunctionDeclarationAfterType",
-                   Style.IndentWrappedFunctionNames);
     IO.mapOptional("MaxEmptyLinesToKeep", Style.MaxEmptyLinesToKeep);
     IO.mapOptional("KeepEmptyLinesAtTheStartOfBlocks",
                    Style.KeepEmptyLinesAtTheStartOfBlocks);
@@ -220,6 +216,8 @@ template <> struct MappingTraits<FormatStyle> {
     IO.mapOptional("TabWidth", Style.TabWidth);
     IO.mapOptional("UseTab", Style.UseTab);
     IO.mapOptional("BreakBeforeBraces", Style.BreakBeforeBraces);
+    IO.mapOptional("IndentFunctionDeclarationAfterType",
+                   Style.IndentFunctionDeclarationAfterType);
     IO.mapOptional("SpacesInParentheses", Style.SpacesInParentheses);
     IO.mapOptional("SpacesInAngles", Style.SpacesInAngles);
     IO.mapOptional("SpaceInEmptyParentheses", Style.SpaceInEmptyParentheses);
@@ -330,7 +328,7 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.ForEachMacros.push_back("Q_FOREACH");
   LLVMStyle.ForEachMacros.push_back("BOOST_FOREACH");
   LLVMStyle.IndentCaseLabels = false;
-  LLVMStyle.IndentWrappedFunctionNames = false;
+  LLVMStyle.IndentFunctionDeclarationAfterType = false;
   LLVMStyle.IndentWidth = 2;
   LLVMStyle.TabWidth = 8;
   LLVMStyle.MaxEmptyLinesToKeep = 1;
@@ -375,6 +373,7 @@ FormatStyle getGoogleStyle(FormatStyle::LanguageKind Language) {
   GoogleStyle.ConstructorInitializerAllOnOneLineOrOnePerLine = true;
   GoogleStyle.DerivePointerAlignment = true;
   GoogleStyle.IndentCaseLabels = true;
+  GoogleStyle.IndentFunctionDeclarationAfterType = true;
   GoogleStyle.KeepEmptyLinesAtTheStartOfBlocks = false;
   GoogleStyle.ObjCSpaceAfterProperty = false;
   GoogleStyle.ObjCSpaceBeforeProtocolList = false;
@@ -2083,14 +2082,13 @@ FormatStyle getStyle(StringRef StyleName, StringRef FileName,
     }
 
     if (IsFile) {
-      llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> Text =
-          llvm::MemoryBuffer::getFile(ConfigFile.c_str());
-      if (std::error_code EC = Text.getError()) {
-        llvm::errs() << EC.message() << "\n";
+      std::unique_ptr<llvm::MemoryBuffer> Text;
+      if (std::error_code ec =
+              llvm::MemoryBuffer::getFile(ConfigFile.c_str(), Text)) {
+        llvm::errs() << ec.message() << "\n";
         break;
       }
-      if (std::error_code ec =
-              parseConfiguration(Text.get()->getBuffer(), &Style)) {
+      if (std::error_code ec = parseConfiguration(Text->getBuffer(), &Style)) {
         if (ec == ParseError::Unsuitable) {
           if (!UnsuitableConfigFiles.empty())
             UnsuitableConfigFiles.append(", ");

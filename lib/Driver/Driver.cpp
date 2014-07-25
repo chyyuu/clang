@@ -522,13 +522,9 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
       std::string Script = StringRef(*it).rsplit('.').first;
       // In some cases (modules) we'll dump extra data to help with reproducing
       // the crash into a directory next to the output.
-      SmallString<128> VFS;
-      if (llvm::sys::fs::exists(Script + ".cache")) {
+      if (llvm::sys::fs::exists(Script + ".cache"))
         Diag(clang::diag::note_drv_command_failed_diag_msg)
             << Script + ".cache";
-        VFS = llvm::sys::path::filename(Script + ".cache");
-        llvm::sys::path::append(VFS, "vfs", "vfs.yaml");
-      }
 
       std::string Err;
       Script += ".sh";
@@ -537,7 +533,7 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
         Diag(clang::diag::note_drv_command_failed_diag_msg)
           << "Error generating run script: " + Script + " " + Err;
       } else {
-        // Replace the original filename with the preprocessed one.
+        // Append the new filename with correct preprocessed suffix.
         size_t I, E;
         I = Cmd.find("-main-file-name ");
         assert (I != std::string::npos && "Expected to find -main-file-name");
@@ -550,11 +546,6 @@ void Driver::generateCompilationDiagnostics(Compilation &C,
         E = I + OldFilename.size();
         I = Cmd.rfind(" ", I) + 1;
         Cmd.replace(I, E - I, NewFilename.data(), NewFilename.size());
-        if (!VFS.empty()) {
-          // Add the VFS overlay to the reproduction script.
-          I += NewFilename.size();
-          Cmd.insert(I, std::string(" -ivfsoverlay ") + VFS.c_str());
-        }
         ScriptOS << Cmd;
         Diag(clang::diag::note_drv_command_failed_diag_msg) << Script;
       }
@@ -612,7 +603,7 @@ int Driver::ExecuteCompilation(const Compilation &C,
     // Print extra information about abnormal failures, if possible.
     //
     // This is ad-hoc, but we don't want to be excessively noisy. If the result
-    // status was 1, assume the command failed normally. In particular, if it
+    // status was 1, assume the command failed normally. In particular, if it 
     // was the compiler then assume it gave a reasonable error code. Failures
     // in other tools are less common, and they generally have worse
     // diagnostics, so always print the diagnostic there.
@@ -941,6 +932,35 @@ void Driver::BuildUniversalActions(const ToolChain &TC,
   }
 }
 
+/// \brief Check whether the file referenced by Value exists in the LIB
+/// environment variable.
+static bool ExistsInLibDir(StringRef Value) {
+  llvm::Optional<std::string> OptPath = llvm::sys::Process::GetEnv("LIB");
+  if (!OptPath.hasValue())
+    return false;
+
+#ifdef LLVM_ON_WIN32
+  const StringRef PathSeparators = ";";
+#else
+  const StringRef PathSeparators = ":";
+#endif
+
+  SmallVector<StringRef, 8> LibDirs;
+  llvm::SplitString(OptPath.getValue(), LibDirs, PathSeparators);
+
+  for (const auto &LibDir : LibDirs) {
+    if (LibDir.empty())
+      continue;
+
+    SmallString<128> FilePath(LibDir);
+    llvm::sys::path::append(FilePath, Value);
+    if (llvm::sys::fs::exists(Twine(FilePath)))
+      return true;
+  }
+
+  return false;
+}
+
 /// \brief Check that the file referenced by Value exists. If it doesn't,
 /// issue a diagnostic and return false.
 static bool DiagnoseInputExistence(const Driver &D, const DerivedArgList &Args,
@@ -964,7 +984,7 @@ static bool DiagnoseInputExistence(const Driver &D, const DerivedArgList &Args,
   if (llvm::sys::fs::exists(Twine(Path)))
     return true;
 
-  if (D.IsCLMode() && llvm::sys::Process::FindInEnvPath("LIB", Value))
+  if (D.IsCLMode() && ExistsInLibDir(Value))
     return true;
 
   D.Diag(clang::diag::err_drv_no_such_file) << Path.str();
@@ -1590,7 +1610,7 @@ void Driver::BuildJobsForAction(Compilation &C,
 static const char *MakeCLOutputFilename(const ArgList &Args, StringRef ArgValue,
                                         StringRef BaseName, types::ID FileType) {
   SmallString<128> Filename = ArgValue;
-
+  
   if (ArgValue.empty()) {
     // If the argument is empty, output to BaseName in the current dir.
     Filename = BaseName;
@@ -1893,6 +1913,8 @@ static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
         Target.setArch(llvm::Triple::mips64el);
       else if (Target.getArch() == llvm::Triple::aarch64_be)
         Target.setArch(llvm::Triple::aarch64);
+      else if (Target.getArch() == llvm::Triple::arm64_be)
+        Target.setArch(llvm::Triple::arm64);
     } else {
       if (Target.getArch() == llvm::Triple::mipsel)
         Target.setArch(llvm::Triple::mips);
@@ -1900,6 +1922,8 @@ static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
         Target.setArch(llvm::Triple::mips64);
       else if (Target.getArch() == llvm::Triple::aarch64)
         Target.setArch(llvm::Triple::aarch64_be);
+      else if (Target.getArch() == llvm::Triple::arm64)
+        Target.setArch(llvm::Triple::arm64_be);
     }
   }
 
@@ -1909,18 +1933,14 @@ static llvm::Triple computeTargetTriple(StringRef DefaultTargetTriple,
       Target.getOS() == llvm::Triple::Minix)
     return Target;
 
-  // Handle pseudo-target flags '-m64', '-mx32', '-m32' and '-m16'.
-  if (Arg *A = Args.getLastArg(options::OPT_m64, options::OPT_mx32,
-                               options::OPT_m32, options::OPT_m16)) {
+  // Handle pseudo-target flags '-m64', '-m32' and '-m16'.
+  if (Arg *A = Args.getLastArg(options::OPT_m64, options::OPT_m32,
+                               options::OPT_m16)) {
     llvm::Triple::ArchType AT = llvm::Triple::UnknownArch;
 
     if (A->getOption().matches(options::OPT_m64))
       AT = Target.get64BitArchVariant().getArch();
-    else if (A->getOption().matches(options::OPT_mx32) &&
-             Target.get64BitArchVariant().getArch() == llvm::Triple::x86_64) {
-      AT = llvm::Triple::x86_64;
-      Target.setEnvironment(llvm::Triple::GNUX32);
-    } else if (A->getOption().matches(options::OPT_m32))
+    else if (A->getOption().matches(options::OPT_m32))
       AT = Target.get32BitArchVariant().getArch();
     else if (A->getOption().matches(options::OPT_m16) &&
              Target.get32BitArchVariant().getArch() == llvm::Triple::x86) {

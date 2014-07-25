@@ -8,7 +8,7 @@ add_clang_library(clangEdit
   RewriteObjCFoundationAPI.cpp
 
   LINK_LIBS
-  clangAST
   clangBasic
+  clangAST
   clangLex
   )

@@ -227,14 +227,14 @@ int test_iteration_spaces() {
     c[ii] = a[ii];
 
   // expected-note@+2  {{defined as private}}
-  // expected-error@+2 {{loop iteration variable in the associated loop of 'omp simd' directive may not be private, predetermined as linear}}
+  // expected-error@+2 {{loop iteration variable may not be private}}
   #pragma omp simd private(ii)
   for (ii = 0; ii < 10; ii++)
     c[ii] = a[ii];
 
   // expected-error@+3 {{unexpected OpenMP clause 'shared' in directive '#pragma omp simd'}}
   // expected-note@+2  {{defined as shared}}
-  // expected-error@+2 {{loop iteration variable in the associated loop of 'omp simd' directive may not be shared, predetermined as linear}}
+  // expected-error@+2 {{loop iteration variable may not be shared}}
   #pragma omp simd shared(ii)
   for (ii = 0; ii < 10; ii++)
     c[ii] = a[ii];
@@ -243,15 +243,14 @@ int test_iteration_spaces() {
   for (ii = 0; ii < 10; ii++)
     c[ii] = a[ii];
 
-  #pragma omp simd lastprivate(ii) linear(jj) collapse(2) // expected-note {{defined as linear}}
+  #pragma omp simd lastprivate(ii)
   for (ii = 0; ii < 10; ii++)
-  for (jj = 0; jj < 10; jj++) // expected-error {{loop iteration variable in the associated loop of 'omp simd' directive may not be linear, predetermined as lastprivate}}
-    c[ii] = a[jj];
+    c[ii] = a[ii];
 
 
   #pragma omp parallel
   {
-    // expected-error@+2 {{loop iteration variable in the associated loop of 'omp simd' directive may not be threadprivate or thread local, predetermined as linear}}
+    // expected-error@+2 {{loop iteration variable may not be threadprivate or thread local}}
     #pragma omp simd
     for (sii = 0; sii < 10; sii+=1)
       c[sii] = a[sii];

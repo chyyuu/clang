@@ -253,15 +253,9 @@ void Sema::DiagnoseUnusedExprResult(const Stmt *S) {
       return;
     }
     const ObjCMethodDecl *MD = ME->getMethodDecl();
-    if (MD) {
-      if (MD->hasAttr<WarnUnusedResultAttr>()) {
-        Diag(Loc, diag::warn_unused_result) << R1 << R2;
-        return;
-      }
-      if (MD->isPropertyAccessor()) {
-        Diag(Loc, diag::warn_unused_property_expr);
-        return;
-      }
+    if (MD && MD->hasAttr<WarnUnusedResultAttr>()) {
+      Diag(Loc, diag::warn_unused_result) << R1 << R2;
+      return;
     }
   } else if (const PseudoObjectExpr *POE = dyn_cast<PseudoObjectExpr>(E)) {
     const Expr *Source = POE->getSyntacticForm();
@@ -1940,7 +1934,7 @@ Sema::ActOnCXXForRangeStmt(SourceLocation ForLoc,
 
   // Claim the type doesn't contain auto: we've already done the checking.
   DeclGroupPtrTy RangeGroup =
-      BuildDeclaratorGroup(MutableArrayRef<Decl *>((Decl **)&RangeVar, 1),
+      BuildDeclaratorGroup(llvm::MutableArrayRef<Decl *>((Decl **)&RangeVar, 1),
                            /*TypeMayContainAuto=*/ false);
   StmtResult RangeDecl = ActOnDeclStmt(RangeGroup, RangeLoc, RangeLoc);
   if (RangeDecl.isInvalid()) {
@@ -2257,7 +2251,7 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation ColonLoc,
     Decl *BeginEndDecls[] = { BeginVar, EndVar };
     // Claim the type doesn't contain auto: we've already done the checking.
     DeclGroupPtrTy BeginEndGroup =
-        BuildDeclaratorGroup(MutableArrayRef<Decl *>(BeginEndDecls, 2),
+        BuildDeclaratorGroup(llvm::MutableArrayRef<Decl *>(BeginEndDecls, 2),
                              /*TypeMayContainAuto=*/ false);
     BeginEndDecl = ActOnDeclStmt(BeginEndGroup, ColonLoc, ColonLoc);
 
@@ -3249,15 +3243,16 @@ StmtResult Sema::ActOnCXXTryBlock(SourceLocation TryLoc, Stmt *TryBlock,
   return CXXTryStmt::Create(Context, TryLoc, TryBlock, Handlers);
 }
 
-StmtResult Sema::ActOnSEHTryBlock(bool IsCXXTry, SourceLocation TryLoc,
-                                  Stmt *TryBlock, Stmt *Handler,
-                                  int HandlerIndex, int HandlerParentIndex) {
+StmtResult
+Sema::ActOnSEHTryBlock(bool IsCXXTry,
+                       SourceLocation TryLoc,
+                       Stmt *TryBlock,
+                       Stmt *Handler) {
   assert(TryBlock && Handler);
 
   getCurFunction()->setHasBranchProtectedScope();
 
-  return SEHTryStmt::Create(Context, IsCXXTry, TryLoc, TryBlock, Handler,
-                            HandlerIndex, HandlerParentIndex);
+  return SEHTryStmt::Create(Context,IsCXXTry,TryLoc,TryBlock,Handler);
 }
 
 StmtResult
@@ -3280,17 +3275,6 @@ Sema::ActOnSEHFinallyBlock(SourceLocation Loc,
                            Stmt *Block) {
   assert(Block);
   return SEHFinallyStmt::Create(Context,Loc,Block);
-}
-
-StmtResult
-Sema::ActOnSEHLeaveStmt(SourceLocation Loc, Scope *CurScope) {
-  Scope *SEHTryParent = CurScope;
-  while (SEHTryParent && !SEHTryParent->isSEHTryScope())
-    SEHTryParent = SEHTryParent->getParent();
-  if (!SEHTryParent)
-    return StmtError(Diag(Loc, diag::err_ms___leave_not_in___try));
-
-  return new (Context) SEHLeaveStmt(Loc);
 }
 
 StmtResult Sema::BuildMSDependentExistsStmt(SourceLocation KeywordLoc,

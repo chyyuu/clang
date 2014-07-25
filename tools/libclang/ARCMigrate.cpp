@@ -35,10 +35,6 @@ struct Remap {
 extern "C" {
 
 CXRemapping clang_getRemappings(const char *migrate_dir_path) {
-#ifndef CLANG_ENABLE_ARCMT
-  llvm::errs() << "error: feature not enabled in this build\n";
-  return nullptr;
-#else
   bool Logging = ::getenv("LIBCLANG_LOGGING");
 
   if (!migrate_dir_path) {
@@ -75,15 +71,10 @@ CXRemapping clang_getRemappings(const char *migrate_dir_path) {
   }
 
   return remap.release();
-#endif
 }
 
 CXRemapping clang_getRemappingsFromFileList(const char **filePaths,
                                             unsigned numFiles) {
-#ifndef CLANG_ENABLE_ARCMT
-  llvm::errs() << "error: feature not enabled in this build\n";
-  return nullptr;
-#else
   bool Logging = ::getenv("LIBCLANG_LOGGING");
 
   std::unique_ptr<Remap> remap(new Remap());
@@ -121,7 +112,6 @@ CXRemapping clang_getRemappingsFromFileList(const char **filePaths,
   }
 
   return remap.release();
-#endif
 }
 
 unsigned clang_remap_getNumFiles(CXRemapping map) {

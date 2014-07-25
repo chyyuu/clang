@@ -158,10 +158,10 @@ public:
 };
 
 inline bool isRetKindConvertibleTo(
-    ArrayRef<ast_type_traits::ASTNodeKind> RetKinds,
+    llvm::ArrayRef<ast_type_traits::ASTNodeKind> RetKinds,
     ast_type_traits::ASTNodeKind Kind, unsigned *Specificity,
     ast_type_traits::ASTNodeKind *LeastDerivedKind) {
-  for (ArrayRef<ast_type_traits::ASTNodeKind>::const_iterator
+  for (llvm::ArrayRef<ast_type_traits::ASTNodeKind>::const_iterator
            i = RetKinds.begin(),
            e = RetKinds.end();
        i != e; ++i) {
@@ -199,8 +199,8 @@ public:
   /// \param ArgKinds The types of the arguments this matcher takes.
   FixedArgCountMatcherDescriptor(
       MarshallerType Marshaller, void (*Func)(), StringRef MatcherName,
-      ArrayRef<ast_type_traits::ASTNodeKind> RetKinds,
-      ArrayRef<ArgKind> ArgKinds)
+      llvm::ArrayRef<ast_type_traits::ASTNodeKind> RetKinds,
+      llvm::ArrayRef<ArgKind> ArgKinds)
       : Marshaller(Marshaller), Func(Func), MatcherName(MatcherName),
         RetKinds(RetKinds.begin(), RetKinds.end()),
         ArgKinds(ArgKinds.begin(), ArgKinds.end()) {}
@@ -646,7 +646,7 @@ MatcherDescriptor *makeMatcherAutoMarshall(ReturnType (*Func)(),
   BuildReturnTypeVector<ReturnType>::build(RetTypes);
   return new FixedArgCountMatcherDescriptor(
       matcherMarshall0<ReturnType>, reinterpret_cast<void (*)()>(Func),
-      MatcherName, RetTypes, None);
+      MatcherName, RetTypes, llvm::ArrayRef<ArgKind>());
 }
 
 /// \brief 1-arg overload

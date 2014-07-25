@@ -855,7 +855,7 @@ def NonNull : InheritableAttr {
 
 def ReturnsNonNull : InheritableAttr {
   let Spellings = [GCC<"returns_nonnull">];
-  let Subjects = SubjectList<[ObjCMethod, Function], WarnDiag,
+  let Subjects = SubjectList<[ObjCMethod, HasFunctionProto], WarnDiag,
                              "ExpectedFunctionOrMethod">;
   let Documentation = [Undocumented];
 }
@@ -987,13 +987,6 @@ def ObjCDesignatedInitializer : Attr {
   let Subjects = SubjectList<[ObjCInterfaceDeclInitMethod], ErrorDiag,
                              "ExpectedObjCInterfaceDeclInitMethod">;
   let Documentation = [Undocumented];
-}
-
-def ObjCRuntimeName : Attr {
-  let Spellings = [GNU<"objc_runtime_name">];
-  let Subjects = SubjectList<[ObjCInterface, ObjCProtocol], ErrorDiag>;
-  let Args = [StringArgument<"MetadataName">];
-  let Documentation = [ObjCRuntimeNameDocs];
 }
 
 def OptimizeNone : InheritableAttr {
@@ -1767,18 +1760,6 @@ def MSVtorDisp : InheritableAttr {
   let Documentation = [Undocumented];
 }
 
-def InitSeg : Attr {
-  let Spellings = [Pragma<"", "init_seg">];
-  let Args = [StringArgument<"Section">];
-  let SemaHandler = 0;
-  let Documentation = [InitSegDocs];
-  let AdditionalMembers = [{
-  void printPrettyPragma(raw_ostream &OS, const PrintingPolicy &Policy) const {
-    OS << '(' << getSection() << ')';
-  }
-  }];
-}
-
 def Unaligned : IgnoredAttr {
   let Spellings = [Keyword<"__unaligned">];
 }
@@ -1788,11 +1769,10 @@ def LoopHint : Attr {
   /// vectorize_width: vectorize loop operations with width 'value'.
   /// interleave: interleave multiple loop iterations if 'value != 0'.
   /// interleave_count: interleaves 'value' loop interations.
-  /// unroll: fully unroll loop if 'value != 0'.
+  /// unroll: unroll loop if 'value != 0'.
   /// unroll_count: unrolls loop 'value' times.
 
-  let Spellings = [Pragma<"clang", "loop">, Pragma<"", "unroll">,
-                   Pragma<"", "nounroll">];
+  let Spellings = [Pragma<"clang", "loop">];
 
   /// State of the loop optimization specified by the spelling.
   let Args = [EnumArgument<"Option", "OptionType",
@@ -1822,61 +1802,15 @@ def LoopHint : Attr {
   }
 
   void printPrettyPragma(raw_ostream &OS, const PrintingPolicy &Policy) const {
-    unsigned SpellingIndex = getSpellingListIndex();
-    // For "#pragma unroll" and "#pragma nounroll" the string "unroll" or
-    // "nounroll" is already emitted as the pragma name.
-    if (SpellingIndex == Pragma_nounroll) {
-      OS << "\n";
-      return;
-    }
-    if (SpellingIndex == Pragma_unroll) {
-      if (option == UnrollCount)
-        printArgument(OS);
-      OS << "\n";
-      return;
-    }
-    assert(SpellingIndex == Pragma_clang_loop && "Unexpected spelling");
-    OS << getOptionName(option);
-    printArgument(OS);
-    OS << "\n";
-  }
-
-  // Prints the loop hint argument including the enclosing parentheses to OS.
-  void printArgument(raw_ostream &OS) const {
-    OS << "(";
+    OS << getOptionName(option) << "(";
     if (option == VectorizeWidth || option == InterleaveCount ||
         option == UnrollCount)
       OS << value;
-    else if (option == Unroll && value)
-      // Unroll loop hint does not use the keyword "enable". Instead, a nonzero value
-      // indicates full unrolling which uses the keyword "full".
-      OS << "full";
-    else if (value)
-      OS << "enable";
     else
-      OS << "disable";
-    OS << ")";
-  }
-
-  // Return a string suitable for identifying this attribute in diagnostics.
-  std::string getDiagnosticName() const {
-    std::string DiagnosticName;
-    llvm::raw_string_ostream OS(DiagnosticName);
-    unsigned SpellingIndex = getSpellingListIndex();
-    if (SpellingIndex == Pragma_nounroll)
-      OS << "#pragma nounroll";
-    else if (SpellingIndex == Pragma_unroll) {
-      OS << "#pragma unroll";
-      if (option == UnrollCount)
-        printArgument(OS);
-    } else {
-      assert(SpellingIndex == Pragma_clang_loop && "Unexpected spelling");
-      OS << getOptionName(option);
-      printArgument(OS);
-    }
-    return OS.str();
+      OS << getValueName(value);
+    OS << ")\n";
   }
   }];
 
-  let Documentation = [LoopHintDocs, UnrollHintDocs];
+  let Documentation = [LoopHintDocs];
 }

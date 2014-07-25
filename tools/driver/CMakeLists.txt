@@ -1,7 +1,6 @@
 set( LLVM_LINK_COMPONENTS
   ${LLVM_TARGETS_TO_BUILD}
   Analysis
-  CodeGen
   Core
   IPA
   IPO
@@ -11,6 +10,7 @@ set( LLVM_LINK_COMPONENTS
   MCParser
   ObjCARCOpts
   Option
+  ProfileData
   ScalarOpts
   Support
   TransformUtils

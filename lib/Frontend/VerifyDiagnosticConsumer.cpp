@@ -164,9 +164,8 @@ namespace {
 class StandardDirective : public Directive {
 public:
   StandardDirective(SourceLocation DirectiveLoc, SourceLocation DiagnosticLoc,
-                    bool MatchAnyLine, StringRef Text, unsigned Min,
-                    unsigned Max)
-    : Directive(DirectiveLoc, DiagnosticLoc, MatchAnyLine, Text, Min, Max) { }
+                    StringRef Text, unsigned Min, unsigned Max)
+    : Directive(DirectiveLoc, DiagnosticLoc, Text, Min, Max) { }
 
   bool isValid(std::string &Error) override {
     // all strings are considered valid; even empty ones
@@ -183,10 +182,8 @@ public:
 class RegexDirective : public Directive {
 public:
   RegexDirective(SourceLocation DirectiveLoc, SourceLocation DiagnosticLoc,
-                 bool MatchAnyLine, StringRef Text, unsigned Min, unsigned Max,
-                 StringRef RegexStr)
-    : Directive(DirectiveLoc, DiagnosticLoc, MatchAnyLine, Text, Min, Max),
-      Regex(RegexStr) { }
+                 StringRef Text, unsigned Min, unsigned Max, StringRef RegexStr)
+    : Directive(DirectiveLoc, DiagnosticLoc, Text, Min, Max), Regex(RegexStr) { }
 
   bool isValid(std::string &Error) override {
     if (Regex.isValid(Error))
@@ -374,7 +371,6 @@ static bool ParseDirective(StringRef S, ExpectedData *ED, SourceManager &SM,
 
     // Next optional token: @
     SourceLocation ExpectedLoc;
-    bool MatchAnyLine = false;
     if (!PH.Next("@")) {
       ExpectedLoc = Pos;
     } else {
@@ -415,10 +411,6 @@ static bool ParseDirective(StringRef S, ExpectedData *ED, SourceManager &SM,
 
         if (PH.Next(Line) && Line > 0)
           ExpectedLoc = SM.translateFileLineCol(FE, Line, 1);
-        else if (PH.Next("*")) {
-          MatchAnyLine = true;
-          ExpectedLoc = SM.translateFileLineCol(FE, 1, 1);
-        }
       }
 
       if (ExpectedLoc.isInvalid()) {
@@ -503,8 +495,7 @@ static bool ParseDirective(StringRef S, ExpectedData *ED, SourceManager &SM,
 
     // Construct new directive.
     std::unique_ptr<Directive> D(
-        Directive::create(RegexKind, Pos, ExpectedLoc, MatchAnyLine, Text,
-                          Min, Max));
+        Directive::create(RegexKind, Pos, ExpectedLoc, Text, Min, Max));
 
     std::string Error;
     if (D->isValid(Error)) {
@@ -653,11 +644,8 @@ static unsigned PrintExpected(DiagnosticsEngine &Diags, SourceManager &SourceMgr
   llvm::raw_svector_ostream OS(Fmt);
   for (DirectiveList::iterator I = DL.begin(), E = DL.end(); I != E; ++I) {
     Directive &D = **I;
-    OS << "\n  File " << SourceMgr.getFilename(D.DiagnosticLoc);
-    if (D.MatchAnyLine)
-      OS << " Line *";
-    else
-      OS << " Line " << SourceMgr.getPresumedLineNumber(D.DiagnosticLoc);
+    OS << "\n  File " << SourceMgr.getFilename(D.DiagnosticLoc)
+          << " Line " << SourceMgr.getPresumedLineNumber(D.DiagnosticLoc);
     if (D.DirectiveLoc != D.DiagnosticLoc)
       OS << " (directive at "
          << SourceMgr.getFilename(D.DirectiveLoc) << ':'
@@ -704,11 +692,9 @@ static unsigned CheckLists(DiagnosticsEngine &Diags, SourceManager &SourceMgr,
     for (unsigned i = 0; i < D.Max; ++i) {
       DiagList::iterator II, IE;
       for (II = Right.begin(), IE = Right.end(); II != IE; ++II) {
-        if (!D.MatchAnyLine) {
-          unsigned LineNo2 = SourceMgr.getPresumedLineNumber(II->first);
-          if (LineNo1 != LineNo2)
-            continue;
-        }
+        unsigned LineNo2 = SourceMgr.getPresumedLineNumber(II->first);
+        if (LineNo1 != LineNo2)
+          continue;
 
         if (!IsFromSameFile(SourceMgr, D.DiagnosticLoc, II->first))
           continue;
@@ -873,11 +859,10 @@ void VerifyDiagnosticConsumer::CheckDiagnostics() {
 }
 
 Directive *Directive::create(bool RegexKind, SourceLocation DirectiveLoc,
-                             SourceLocation DiagnosticLoc, bool MatchAnyLine,
-                             StringRef Text, unsigned Min, unsigned Max) {
+                             SourceLocation DiagnosticLoc, StringRef Text,
+                             unsigned Min, unsigned Max) {
   if (!RegexKind)
-    return new StandardDirective(DirectiveLoc, DiagnosticLoc, MatchAnyLine,
-                                 Text, Min, Max);
+    return new StandardDirective(DirectiveLoc, DiagnosticLoc, Text, Min, Max);
 
   // Parse the directive into a regular expression.
   std::string RegexStr;
@@ -902,6 +887,6 @@ Directive *Directive::create(bool RegexKind, SourceLocation DirectiveLoc,
     }
   }
 
-  return new RegexDirective(DirectiveLoc, DiagnosticLoc, MatchAnyLine, Text,
-                            Min, Max, RegexStr);
+  return new RegexDirective(DirectiveLoc, DiagnosticLoc, Text, Min, Max,
+                            RegexStr);
 }

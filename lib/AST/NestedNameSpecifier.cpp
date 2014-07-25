@@ -453,8 +453,10 @@ NestedNameSpecifierLocBuilder(const NestedNameSpecifierLocBuilder &Other)
   }
   
   // Deep copy
-  Append(Other.Buffer, Other.Buffer + Other.BufferSize, Buffer, BufferSize,
-         BufferCapacity);
+  BufferSize = Other.BufferSize;
+  BufferCapacity = Other.BufferSize;
+  Buffer = static_cast<char *>(malloc(BufferCapacity));
+  memcpy(Buffer, Other.Buffer, BufferSize);
 }
 
 NestedNameSpecifierLocBuilder &
@@ -490,8 +492,10 @@ operator=(const NestedNameSpecifierLocBuilder &Other) {
   }
   
   // Deep copy.
-  Append(Other.Buffer, Other.Buffer + Other.BufferSize, Buffer, BufferSize,
-         BufferCapacity);
+  BufferSize = Other.BufferSize;
+  BufferCapacity = BufferSize;
+  Buffer = static_cast<char *>(malloc(BufferSize));
+  memcpy(Buffer, Other.Buffer, BufferSize);
   return *this;
 }
 

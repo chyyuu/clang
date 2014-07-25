@@ -1763,7 +1763,7 @@ bool Sema::CheckFunctionReturnType(QualType T, SourceLocation Loc) {
 }
 
 QualType Sema::BuildFunctionType(QualType T,
-                                 MutableArrayRef<QualType> ParamTypes,
+                                 llvm::MutableArrayRef<QualType> ParamTypes,
                                  SourceLocation Loc, DeclarationName Entity,
                                  const FunctionProtoType::ExtProtoInfo &EPI) {
   bool Invalid = false;
@@ -1989,14 +1989,17 @@ static void inferARCWriteback(TypeProcessingState &state,
   // TODO: mark whether we did this inference?
 }
 
-void Sema::diagnoseIgnoredQualifiers(unsigned DiagID, unsigned Quals,
-                                     SourceLocation FallbackLoc,
-                                     SourceLocation ConstQualLoc,
-                                     SourceLocation VolatileQualLoc,
-                                     SourceLocation RestrictQualLoc,
-                                     SourceLocation AtomicQualLoc) {
+static void diagnoseIgnoredQualifiers(
+    Sema &S, unsigned Quals,
+    SourceLocation FallbackLoc,
+    SourceLocation ConstQualLoc = SourceLocation(),
+    SourceLocation VolatileQualLoc = SourceLocation(),
+    SourceLocation RestrictQualLoc = SourceLocation(),
+    SourceLocation AtomicQualLoc = SourceLocation()) {
   if (!Quals)
     return;
+
+  const SourceManager &SM = S.getSourceManager();
 
   struct Qual {
     unsigned Mask;
@@ -2024,8 +2027,7 @@ void Sema::diagnoseIgnoredQualifiers(unsigned DiagID, unsigned Quals,
       SourceLocation QualLoc = QualKinds[I].Loc;
       if (!QualLoc.isInvalid()) {
         FixIts[NumQuals] = FixItHint::CreateRemoval(QualLoc);
-        if (Loc.isInvalid() ||
-            getSourceManager().isBeforeInTranslationUnit(QualLoc, Loc))
+        if (Loc.isInvalid() || SM.isBeforeInTranslationUnit(QualLoc, Loc))
           Loc = QualLoc;
       }
 
@@ -2033,20 +2035,19 @@ void Sema::diagnoseIgnoredQualifiers(unsigned DiagID, unsigned Quals,
     }
   }
 
-  Diag(Loc.isInvalid() ? FallbackLoc : Loc, DiagID)
+  S.Diag(Loc.isInvalid() ? FallbackLoc : Loc, diag::warn_qual_return_type)
     << QualStr << NumQuals << FixIts[0] << FixIts[1] << FixIts[2] << FixIts[3];
 }
 
 // Diagnose pointless type qualifiers on the return type of a function.
-static void diagnoseRedundantReturnTypeQualifiers(Sema &S, QualType RetTy,
-                                                  Declarator &D,
-                                                  unsigned FunctionChunkIndex) {
+static void diagnoseIgnoredFunctionQualifiers(Sema &S, QualType RetTy,
+                                              Declarator &D,
+                                              unsigned FunctionChunkIndex) {
   if (D.getTypeObject(FunctionChunkIndex).Fun.hasTrailingReturnType()) {
     // FIXME: TypeSourceInfo doesn't preserve location information for
     // qualifiers.
-    S.diagnoseIgnoredQualifiers(diag::warn_qual_return_type,
-                                RetTy.getLocalCVRQualifiers(),
-                                D.getIdentifierLoc());
+    diagnoseIgnoredQualifiers(S, RetTy.getLocalCVRQualifiers(),
+                              D.getIdentifierLoc());
     return;
   }
 
@@ -2060,9 +2061,8 @@ static void diagnoseRedundantReturnTypeQualifiers(Sema &S, QualType RetTy,
 
     case DeclaratorChunk::Pointer: {
       DeclaratorChunk::PointerTypeInfo &PTI = OuterChunk.Ptr;
-      S.diagnoseIgnoredQualifiers(
-          diag::warn_qual_return_type,
-          PTI.TypeQuals,
+      diagnoseIgnoredQualifiers(
+          S, PTI.TypeQuals,
           SourceLocation(),
           SourceLocation::getFromRawEncoding(PTI.ConstQualLoc),
           SourceLocation::getFromRawEncoding(PTI.VolatileQualLoc),
@@ -2079,9 +2079,8 @@ static void diagnoseRedundantReturnTypeQualifiers(Sema &S, QualType RetTy,
       // FIXME: We can't currently provide an accurate source location and a
       // fix-it hint for these.
       unsigned AtomicQual = RetTy->isAtomicType() ? DeclSpec::TQ_atomic : 0;
-      S.diagnoseIgnoredQualifiers(diag::warn_qual_return_type,
-                                  RetTy.getCVRQualifiers() | AtomicQual,
-                                  D.getIdentifierLoc());
+      diagnoseIgnoredQualifiers(S, RetTy.getCVRQualifiers() | AtomicQual,
+                                D.getIdentifierLoc());
       return;
     }
 
@@ -2096,13 +2095,12 @@ static void diagnoseRedundantReturnTypeQualifiers(Sema &S, QualType RetTy,
 
   // Just parens all the way out to the decl specifiers. Diagnose any qualifiers
   // which are present there.
-  S.diagnoseIgnoredQualifiers(diag::warn_qual_return_type,
-                              D.getDeclSpec().getTypeQualifiers(),
-                              D.getIdentifierLoc(),
-                              D.getDeclSpec().getConstSpecLoc(),
-                              D.getDeclSpec().getVolatileSpecLoc(),
-                              D.getDeclSpec().getRestrictSpecLoc(),
-                              D.getDeclSpec().getAtomicSpecLoc());
+  diagnoseIgnoredQualifiers(S, D.getDeclSpec().getTypeQualifiers(),
+                            D.getIdentifierLoc(),
+                            D.getDeclSpec().getConstSpecLoc(),
+                            D.getDeclSpec().getVolatileSpecLoc(),
+                            D.getDeclSpec().getRestrictSpecLoc(),
+                            D.getDeclSpec().getAtomicSpecLoc());
 }
 
 static QualType GetDeclSpecTypeForDeclarator(TypeProcessingState &state,
@@ -2395,9 +2393,9 @@ static void warnAboutAmbiguousFunction(Sema &S, Declarator &D,
   }
 
   if (FTI.NumParams > 0) {
-    // For a declaration with parameters, eg. "T var(T());", suggest adding
-    // parens around the first parameter to turn the declaration into a
-    // variable declaration.
+    // For a declaration with parameters, eg. "T var(T());", suggest adding parens
+    // around the first parameter to turn the declaration into a variable
+    // declaration.
     SourceRange Range = FTI.Params[0].Param->getSourceRange();
     SourceLocation B = Range.getBegin();
     SourceLocation E = S.getLocForEndOfToken(Range.getEnd());
@@ -2407,8 +2405,8 @@ static void warnAboutAmbiguousFunction(Sema &S, Declarator &D,
       << FixItHint::CreateInsertion(B, "(")
       << FixItHint::CreateInsertion(E, ")");
   } else {
-    // For a declaration without parameters, eg. "T var();", suggest replacing
-    // the parens with an initializer to turn the declaration into a variable
+    // For a declaration without parameters, eg. "T var();", suggest replacing the
+    // parens with an initializer to turn the declaration into a variable
     // declaration.
     const CXXRecordDecl *RD = RT->getAsCXXRecordDecl();
 
@@ -2790,7 +2788,7 @@ static TypeSourceInfo *GetFullTypeForDeclarator(TypeProcessingState &state,
       if ((T.getCVRQualifiers() || T->isAtomicType()) &&
           !(S.getLangOpts().CPlusPlus &&
             (T->isDependentType() || T->isRecordType())))
-        diagnoseRedundantReturnTypeQualifiers(S, T, D, chunkIndex);
+        diagnoseIgnoredFunctionQualifiers(S, T, D, chunkIndex);
 
       // Objective-C ARC ownership qualifiers are ignored on the function
       // return type (by type canonicalization). Complain if this attribute
@@ -4739,7 +4737,9 @@ static bool isPermittedNeonBaseType(QualType &Ty,
   // Signed poly is mathematically wrong, but has been baked into some ABIs by
   // now.
   bool IsPolyUnsigned = Triple.getArch() == llvm::Triple::aarch64 ||
-                        Triple.getArch() == llvm::Triple::aarch64_be;
+                        Triple.getArch() == llvm::Triple::aarch64_be ||
+                        Triple.getArch() == llvm::Triple::arm64 ||
+                        Triple.getArch() == llvm::Triple::arm64_be;
   if (VecKind == VectorType::NeonPolyVector) {
     if (IsPolyUnsigned) {
       // AArch64 polynomial vectors are unsigned and support poly64.
@@ -4757,7 +4757,9 @@ static bool isPermittedNeonBaseType(QualType &Ty,
   // Non-polynomial vector types: the usual suspects are allowed, as well as
   // float64_t on AArch64.
   bool Is64Bit = Triple.getArch() == llvm::Triple::aarch64 ||
-                 Triple.getArch() == llvm::Triple::aarch64_be;
+                 Triple.getArch() == llvm::Triple::aarch64_be ||
+                 Triple.getArch() == llvm::Triple::arm64 ||
+                 Triple.getArch() == llvm::Triple::arm64_be;
 
   if (Is64Bit && BTy->getKind() == BuiltinType::Double)
     return true;

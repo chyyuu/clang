@@ -36,9 +36,12 @@ using namespace CodeGen;
 CodeGenFunction::CodeGenFunction(CodeGenModule &cgm, bool suppressNewContext)
     : CodeGenTypeCache(cgm), CGM(cgm), Target(cgm.getTarget()),
       Builder(cgm.getModule().getContext(), llvm::ConstantFolder(),
-              CGBuilderInserterTy(this)),
-      CapturedStmtInfo(nullptr), SanOpts(&CGM.getLangOpts().Sanitize),
-      IsSanitizerScope(false), AutoreleaseResult(false), BlockInfo(nullptr),
+              CGBuilderInserterTy(this)), CapturedStmtInfo(nullptr),
+      SanitizePerformTypeCheck(CGM.getSanOpts().Null |
+                               CGM.getSanOpts().Alignment |
+                               CGM.getSanOpts().ObjectSize |
+                               CGM.getSanOpts().Vptr),
+      SanOpts(&CGM.getSanOpts()), AutoreleaseResult(false), BlockInfo(nullptr),
       BlockPointer(nullptr), LambdaThisCaptureField(nullptr),
       NormalCleanupDest(nullptr), NextCleanupDestIndex(1),
       FirstBlockInfo(nullptr), EHResumeBlock(nullptr), ExceptionSlot(nullptr),
@@ -536,8 +539,10 @@ void CodeGenFunction::StartFunction(GlobalDecl GD,
   CurFnInfo = &FnInfo;
   assert(CurFn->isDeclaration() && "Function already has body?");
 
-  if (CGM.getSanitizerBlacklist().isIn(*Fn))
+  if (CGM.getSanitizerBlacklist().isIn(*Fn)) {
     SanOpts = &SanitizerOptions::Disabled;
+    SanitizePerformTypeCheck = false;
+  }
 
   // Pass inline keyword to optimizer if it appears explicitly on any
   // declaration. Also, in the case of -fno-inline attach NoInline
@@ -789,13 +794,16 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
   // of the declaration as the location for the subprogram. A function
   // may lack a declaration in the source code if it is created by code
   // gen. (examples: _GLOBAL__I_a, __cxx_global_array_dtor, thunk).
-  SourceLocation Loc = FD->getLocation();
+  SourceLocation Loc;
+  if (FD) {
+    Loc = FD->getLocation();
 
-  // If this is a function specialization then use the pattern body
-  // as the location for the function.
-  if (const FunctionDecl *SpecDecl = FD->getTemplateInstantiationPattern())
-    if (SpecDecl->hasBody(SpecDecl))
-      Loc = SpecDecl->getLocation();
+    // If this is a function specialization then use the pattern body
+    // as the location for the function.
+    if (const FunctionDecl *SpecDecl = FD->getTemplateInstantiationPattern())
+      if (SpecDecl->hasBody(SpecDecl))
+        Loc = SpecDecl->getLocation();
+  }
 
   // Emit the standard function prologue.
   StartFunction(GD, ResTy, Fn, FnInfo, Args, Loc, BodyRange.getBegin());
@@ -844,12 +852,11 @@ void CodeGenFunction::GenerateCode(GlobalDecl GD, llvm::Function *Fn,
   //   function call is used by the caller, the behavior is undefined.
   if (getLangOpts().CPlusPlus && !FD->hasImplicitReturnZero() &&
       !FD->getReturnType()->isVoidType() && Builder.GetInsertBlock()) {
-    if (SanOpts->Return) {
-      SanitizerScope SanScope(this);
+    if (SanOpts->Return)
       EmitCheck(Builder.getFalse(), "missing_return",
                 EmitCheckSourceLocation(FD->getLocation()),
                 ArrayRef<llvm::Value *>(), CRK_Unrecoverable);
-    } else if (CGM.getCodeGenOpts().OptimizationLevel == 0)
+    else if (CGM.getCodeGenOpts().OptimizationLevel == 0)
       Builder.CreateCall(CGM.getIntrinsic(llvm::Intrinsic::trap));
     Builder.CreateUnreachable();
     Builder.ClearInsertionPoint();
@@ -1501,7 +1508,6 @@ void CodeGenFunction::EmitVariablyModifiedType(QualType type) {
           //   greater than zero.
           if (SanOpts->VLABound &&
               size->getType()->isSignedIntegerType()) {
-            SanitizerScope SanScope(this);
             llvm::Value *Zero = llvm::Constant::getNullValue(Size->getType());
             llvm::Constant *StaticArgs[] = {
               EmitCheckSourceLocation(size->getLocStart()),
@@ -1640,26 +1646,11 @@ llvm::Value *CodeGenFunction::EmitFieldAnnotations(const FieldDecl *D,
 
 CodeGenFunction::CGCapturedStmtInfo::~CGCapturedStmtInfo() { }
 
-CodeGenFunction::SanitizerScope::SanitizerScope(CodeGenFunction *CGF)
-    : CGF(CGF) {
-  assert(!CGF->IsSanitizerScope);
-  CGF->IsSanitizerScope = true;
-}
-
-CodeGenFunction::SanitizerScope::~SanitizerScope() {
-  CGF->IsSanitizerScope = false;
-}
-
 void CodeGenFunction::InsertHelper(llvm::Instruction *I,
                                    const llvm::Twine &Name,
                                    llvm::BasicBlock *BB,
                                    llvm::BasicBlock::iterator InsertPt) const {
   LoopStack.InsertHelper(I);
-  if (IsSanitizerScope) {
-    I->setMetadata(
-        CGM.getModule().getMDKindID("nosanitize"),
-        llvm::MDNode::get(CGM.getLLVMContext(), ArrayRef<llvm::Value *>()));
-  }
 }
 
 template <bool PreserveNames>

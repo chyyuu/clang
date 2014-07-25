@@ -288,11 +288,6 @@ Retry:
     ProhibitAttributes(Attrs); // TODO: is it correct?
     return ParseSEHTryBlock();
 
-  case tok::kw___leave:
-    Res = ParseSEHLeaveStatement();
-    SemiError = "__leave";
-    break;
-
   case tok::annot_pragma_vis:
     ProhibitAttributes(Attrs);
     HandlePragmaVisibility();
@@ -345,7 +340,7 @@ Retry:
 
   case tok::annot_pragma_openmp:
     ProhibitAttributes(Attrs);
-    return ParseOpenMPDeclarativeOrExecutableDirective(!OnlyStatement);
+    return ParseOpenMPDeclarativeOrExecutableDirective();
 
   case tok::annot_pragma_ms_pointers_to_members:
     ProhibitAttributes(Attrs);
@@ -424,27 +419,10 @@ StmtResult Parser::ParseSEHTryBlock() {
 ///   seh-finally-block
 ///
 StmtResult Parser::ParseSEHTryBlockCommon(SourceLocation TryLoc) {
-  if (Tok.isNot(tok::l_brace))
+  if(Tok.isNot(tok::l_brace))
     return StmtError(Diag(Tok, diag::err_expected) << tok::l_brace);
 
-  int SEHTryIndex, SEHTryParentIndex;
-  StmtResult TryBlock;
-  {
-    assert(Tok.is(tok::l_brace) && "Not a compount stmt!");
-
-    // Enter a scope to hold everything within the compound stmt.  Compound
-    // statements can always hold declarations.
-    ParseScope CompoundScope(this, Scope::DeclScope | Scope::SEHTryScope);
-    SEHTryIndex = getCurScope()->getSEHTryIndex();
-    SEHTryParentIndex = getCurScope()->getSEHTryParentIndex();
-
-    // Parse the statements in the body.
-    TryBlock = ParseCompoundStatementBody();
-  }
-
-  //StmtResult TryBlock(ParseCompoundStatement(/*isStmtExpr=*/false,
-  //                    Scope::DeclScope | Scope::SEHTryScope));
-
+  StmtResult TryBlock(ParseCompoundStatement());
   if(TryBlock.isInvalid())
     return TryBlock;
 
@@ -466,9 +444,7 @@ StmtResult Parser::ParseSEHTryBlockCommon(SourceLocation TryLoc) {
   return Actions.ActOnSEHTryBlock(false /* IsCXXTry */,
                                   TryLoc,
                                   TryBlock.get(),
-                                  Handler.get(),
-                                  SEHTryIndex,
-                                  SEHTryParentIndex);
+                                  Handler.get());
 }
 
 /// ParseSEHExceptBlock - Handle __except
@@ -528,16 +504,6 @@ StmtResult Parser::ParseSEHFinallyBlock(SourceLocation FinallyBlock) {
     return Block;
 
   return Actions.ActOnSEHFinallyBlock(FinallyBlock,Block.get());
-}
-
-/// Handle __leave
-///
-/// seh-leave-statement:
-///   '__leave' ';'
-///
-StmtResult Parser::ParseSEHLeaveStatement() {
-  SourceLocation LeaveLoc = ConsumeToken();  // eat the '__leave'.
-  return Actions.ActOnSEHLeaveStmt(LeaveLoc, getCurScope());
 }
 
 /// ParseLabeledStatement - We have an identifier and a ':' after it.
@@ -822,6 +788,7 @@ StmtResult Parser::ParseCompoundStatement(bool isStmtExpr) {
 ///         declaration
 /// [GNU]   '__extension__' declaration
 ///         statement
+/// [OMP]   openmp-directive            [TODO]
 ///
 /// [GNU] label-declarations:
 /// [GNU]   label-declaration
@@ -829,6 +796,10 @@ StmtResult Parser::ParseCompoundStatement(bool isStmtExpr) {
 ///
 /// [GNU] label-declaration:
 /// [GNU]   '__label__' identifier-list ';'
+///
+/// [OMP] openmp-directive:             [TODO]
+/// [OMP]   barrier-directive
+/// [OMP]   flush-directive
 ///
 StmtResult Parser::ParseCompoundStatement(bool isStmtExpr,
                                           unsigned ScopeFlags) {
@@ -1833,16 +1804,18 @@ StmtResult Parser::ParsePragmaLoopHint(StmtVector &Stmts, bool OnlyStatement,
   // Create temporary attribute list.
   ParsedAttributesWithRange TempAttrs(AttrFactory);
 
-  // Get loop hints and consume annotated token.
+  // Get vectorize hints and consume annotated token.
   while (Tok.is(tok::annot_pragma_loop_hint)) {
     LoopHint Hint = HandlePragmaLoopHint();
     ConsumeToken();
 
-    ArgsUnion ArgHints[] = {Hint.PragmaNameLoc, Hint.OptionLoc, Hint.ValueLoc,
+    if (!Hint.LoopLoc || !Hint.OptionLoc || !Hint.ValueLoc)
+      continue;
+
+    ArgsUnion ArgHints[] = {Hint.OptionLoc, Hint.ValueLoc,
                             ArgsUnion(Hint.ValueExpr)};
-    TempAttrs.addNew(Hint.PragmaNameLoc->Ident, Hint.Range, nullptr,
-                     Hint.PragmaNameLoc->Loc, ArgHints, 4,
-                     AttributeList::AS_Pragma);
+    TempAttrs.addNew(Hint.LoopLoc->Ident, Hint.Range, nullptr,
+                     Hint.LoopLoc->Loc, ArgHints, 3, AttributeList::AS_Pragma);
   }
 
   // Get the next statement.
@@ -1977,21 +1950,9 @@ StmtResult Parser::ParseCXXTryBlockCommon(SourceLocation TryLoc, bool FnTry) {
     return StmtError(Diag(Tok, diag::err_expected) << tok::l_brace);
   // FIXME: Possible draft standard bug: attribute-specifier should be allowed?
 
-  int SEHTryIndex, SEHTryParentIndex;
-  StmtResult TryBlock;
-  {
-    assert(Tok.is(tok::l_brace) && "Not a compount stmt!");
-
-    // Enter a scope to hold everything within the compound stmt.  Compound
-    // statements can always hold declarations.
-    ParseScope CompoundScope(this, Scope::DeclScope | Scope::TryScope |
-                                       (FnTry ? Scope::FnTryCatchScope : 0));
-    SEHTryIndex = getCurScope()->getSEHTryIndex();
-    SEHTryParentIndex = getCurScope()->getSEHTryParentIndex();
-
-    // Parse the statements in the body.
-    TryBlock = ParseCompoundStatementBody();
-  }
+  StmtResult TryBlock(ParseCompoundStatement(/*isStmtExpr=*/false,
+                      Scope::DeclScope | Scope::TryScope |
+                        (FnTry ? Scope::FnTryCatchScope : 0)));
   if (TryBlock.isInvalid())
     return TryBlock;
 
@@ -2016,9 +1977,7 @@ StmtResult Parser::ParseCXXTryBlockCommon(SourceLocation TryLoc, bool FnTry) {
     return Actions.ActOnSEHTryBlock(true /* IsCXXTry */,
                                     TryLoc,
                                     TryBlock.get(),
-                                    Handler.get(),
-                                    SEHTryIndex,
-                                    SEHTryParentIndex);
+                                    Handler.get());
   }
   else {
     StmtVector Handlers;

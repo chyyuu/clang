@@ -362,7 +362,7 @@ public:
 
   bool isKernelStatic() const override {
     return !isTargetIPhoneOS() || isIPhoneOSVersionLT(6, 0) ||
-           getTriple().getArch() == llvm::Triple::aarch64;
+           getTriple().getArch() == llvm::Triple::arm64;
   }
 
 protected:
@@ -538,9 +538,7 @@ public:
   }
 
   virtual bool IsIntegratedAssemblerDefault() const {
-    if (getTriple().getArch() == llvm::Triple::ppc ||
-        getTriple().getArch() == llvm::Triple::sparc ||
-        getTriple().getArch() == llvm::Triple::sparcv9)
+    if (getTriple().getArch() == llvm::Triple::ppc)
       return true;
     return Generic_ELF::IsIntegratedAssemblerDefault();
   }

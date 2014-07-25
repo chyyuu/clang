@@ -2952,6 +2952,7 @@ Parser::ParseCXXAmbiguousParenExpression(ParenParseOption &ExprType,
     ParseAs = CompoundLiteral;
   } else {
     bool NotCastExpr;
+    // FIXME: Special-case ++ and --: "(S())++;" is not a cast-expression
     if (Tok.is(tok::l_paren) && NextToken().is(tok::r_paren)) {
       NotCastExpr = true;
     } else {

@@ -1,6 +1,6 @@
 set(LLVM_LINK_COMPONENTS
-  MC
   MCParser
+  MC
   Support
   )
 
@@ -22,8 +22,8 @@ add_clang_library(clangParse
   Parser.cpp
 
   LINK_LIBS
-  clangAST
   clangBasic
+  clangAST
   clangLex
   clangSema
   )

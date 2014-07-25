@@ -83,7 +83,7 @@ public:
 
   CompVector getCompletions() {
     return Registry::getCompletions(
-        ArrayRef<std::pair<MatcherCtor, unsigned> >());
+        llvm::ArrayRef<std::pair<MatcherCtor, unsigned> >());
   }
 
   CompVector getCompletions(StringRef MatcherName1, unsigned ArgNo1) {

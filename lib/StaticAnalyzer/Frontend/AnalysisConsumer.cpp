@@ -214,7 +214,7 @@ public:
         default:
 #define ANALYSIS_DIAGNOSTICS(NAME, CMDFLAG, DESC, CREATEFN)                    \
   case PD_##NAME:                                                              \
-    CREATEFN(*Opts.get(), PathConsumers, OutDir, PP);                       \
+    CREATEFN(*Opts.getPtr(), PathConsumers, OutDir, PP);                       \
     break;
 #include "clang/StaticAnalyzer/Core/Analyses.def"
         }
@@ -546,7 +546,7 @@ void AnalysisConsumer::HandleTranslationUnit(ASTContext &C) {
   // FIXME: This should be replaced with something that doesn't rely on
   // side-effects in PathDiagnosticConsumer's destructor. This is required when
   // used with option -disable-free.
-  Mgr.reset();
+  Mgr.reset(nullptr);
 
   if (TUTotalTimer) TUTotalTimer->stopTimer();
 
@@ -712,7 +712,7 @@ class UbigraphViz : public ExplodedNode::Auditor {
   VMap M;
 
 public:
-  UbigraphViz(std::unique_ptr<raw_ostream> Out, StringRef Filename);
+  UbigraphViz(raw_ostream *Out, StringRef Filename);
 
   ~UbigraphViz();
 
@@ -727,9 +727,10 @@ static ExplodedNode::Auditor* CreateUbiViz() {
   llvm::sys::fs::createTemporaryFile("llvm_ubi", "", FD, P);
   llvm::errs() << "Writing '" << P.str() << "'.\n";
 
-  auto Stream = llvm::make_unique<llvm::raw_fd_ostream>(FD, true);
+  std::unique_ptr<llvm::raw_fd_ostream> Stream;
+  Stream.reset(new llvm::raw_fd_ostream(FD, true));
 
-  return new UbigraphViz(std::move(Stream), P);
+  return new UbigraphViz(Stream.release(), P);
 }
 
 void UbigraphViz::AddEdge(ExplodedNode *Src, ExplodedNode *Dst) {
@@ -766,8 +767,8 @@ void UbigraphViz::AddEdge(ExplodedNode *Src, ExplodedNode *Dst) {
        << ", ('arrow','true'), ('oriented', 'true'))\n";
 }
 
-UbigraphViz::UbigraphViz(std::unique_ptr<raw_ostream> Out, StringRef Filename)
-    : Out(std::move(Out)), Filename(Filename), Cntr(0) {
+UbigraphViz::UbigraphViz(raw_ostream *Out, StringRef Filename)
+  : Out(Out), Filename(Filename), Cntr(0) {
 
   *Out << "('vertex_style_attribute', 0, ('shape', 'icosahedron'))\n";
   *Out << "('vertex_style', 1, 0, ('shape', 'sphere'), ('color', '#ffcc66'),"
@@ -775,7 +776,7 @@ UbigraphViz::UbigraphViz(std::unique_ptr<raw_ostream> Out, StringRef Filename)
 }
 
 UbigraphViz::~UbigraphViz() {
-  Out.reset();
+  Out.reset(nullptr);
   llvm::errs() << "Running 'ubiviz' program... ";
   std::string ErrMsg;
   std::string Ubiviz = llvm::sys::FindProgramByName("ubiviz");

@@ -56,14 +56,14 @@ public:
   CallEventRef(const CallEventRef &Orig) : IntrusiveRefCntPtr<const T>(Orig) {}
 
   CallEventRef<T> cloneWithState(ProgramStateRef State) const {
-    return this->get()->template cloneWithState<T>(State);
+    return this->getPtr()->template cloneWithState<T>(State);
   }
 
   // Allow implicit conversions to a superclass type, since CallEventRef
   // behaves like a pointer-to-const.
   template <typename SuperT>
   operator CallEventRef<SuperT> () const {
-    return this->get();
+    return this->getPtr();
   }
 };
 
@@ -1024,7 +1024,7 @@ namespace llvm {
 
     static SimpleType
     getSimplifiedValue(clang::ento::CallEventRef<T> Val) {
-      return Val.get();
+      return Val.getPtr();
     }
   };
 }

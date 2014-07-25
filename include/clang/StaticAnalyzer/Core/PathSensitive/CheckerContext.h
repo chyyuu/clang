@@ -174,13 +174,8 @@ public:
     return Pred->getLocationContext()->getAnalysisDeclContext();
   }
 
-  /// \brief Get the blockID.
-  unsigned getBlockID() const {
-    return NB.getContext().getBlock()->getBlockID();
-  }
-
-  /// \brief If the given node corresponds to a PostStore program point,
-  /// retrieve the location region as it was uttered in the code.
+  /// \brief If the given node corresponds to a PostStore program point, retrieve
+  /// the location region as it was uttered in the code.
   ///
   /// This utility can be useful for generating extensive diagnostics, for
   /// example, for finding variables that the given symbol was assigned to.

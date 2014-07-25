@@ -129,7 +129,7 @@ bool runToolOnCodeWithArgs(clang::FrontendAction *ToolAction, const Twine &Code,
   llvm::IntrusiveRefCntPtr<FileManager> Files(
       new FileManager(FileSystemOptions()));
   ToolInvocation Invocation(getSyntaxOnlyToolArgs(Args, FileNameRef), ToolAction,
-                            Files.get());
+                            Files.getPtr());
 
   SmallString<1024> CodeStorage;
   Invocation.mapVirtualFile(FileNameRef,
@@ -352,7 +352,7 @@ int ClangTool::run(ToolAction *Action) {
     DEBUG({
       llvm::dbgs() << "Processing: " << Command.first << ".\n";
     });
-    ToolInvocation Invocation(std::move(CommandLine), Action, Files.get());
+    ToolInvocation Invocation(std::move(CommandLine), Action, Files.getPtr());
     Invocation.setDiagnosticConsumer(DiagConsumer);
     for (const auto &MappedFile : MappedFileContents) {
       Invocation.mapVirtualFile(MappedFile.first, MappedFile.second);

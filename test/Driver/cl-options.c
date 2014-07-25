@@ -87,10 +87,6 @@
 // RUN: %clang_cl /showIncludes -### -- %s 2>&1 | FileCheck -check-prefix=showIncludes %s
 // showIncludes: --show-includes
 
-// RUN: %clang_cl /E /showIncludes -### -- %s 2>&1 | FileCheck -check-prefix=showIncludes_E %s
-// RUN: %clang_cl /EP /showIncludes -### -- %s 2>&1 | FileCheck -check-prefix=showIncludes_E %s
-// showIncludes_E: warning: argument unused during compilation: '--show-includes'
-
 // RUN: %clang_cl /Umymacro -### -- %s 2>&1 | FileCheck -check-prefix=U %s
 // RUN: %clang_cl /U mymacro -### -- %s 2>&1 | FileCheck -check-prefix=U %s
 // U: "-U" "mymacro"
@@ -182,8 +178,6 @@
 // RUN:    /wd1234 \
 // RUN:    /Zc:forScope \
 // RUN:    /Zc:wchar_t \
-// RUN:    /Zc:inline \
-// RUN:    /Zc:rvalueCast \
 // RUN:    -### -- %s 2>&1 | FileCheck -check-prefix=IGNORED %s
 // IGNORED-NOT: argument unused during compilation
 
@@ -202,6 +196,7 @@
 // (/Zs is for syntax-only)
 // RUN: %clang_cl /Zs \
 // RUN:     /AIfoo \
+// RUN:     /arch:sse2 \
 // RUN:     /clr:pure \
 // RUN:     /docname \
 // RUN:     /d2Zi+ \
@@ -288,25 +283,15 @@
 // Xclang: "-cc1"
 // Xclang: "hellocc1"
 
-// RTTI is on by default. /GR- controls -fno-rtti-data.
-// RUN: %clang_cl /c /GR- -### -- %s 2>&1 | FileCheck -check-prefix=NoRTTI %s
-// NoRTTI: "-fno-rtti-data"
-// NoRTTI-NOT: "-fno-rtti"
-// RUN: %clang_cl /c /GR -### -- %s 2>&1 | FileCheck -check-prefix=RTTI %s
-// RTTI-NOT: "-fno-rtti-data"
-// RTTI-NOT: "-fno-rtti"
+// We support -m32 and -m64.
+// RUN: %clang_cl /Zs /WX -m32 -m64 -### -- 2>&1 %s | FileCheck -check-prefix=MFLAGS %s
+// MFLAGS-NOT: argument unused during compilation
 
-// Accept "core" clang options.
-// (/Zs is for syntax-only)
-// RUN: %clang_cl \
-// RUN:     --driver-mode=cl \
-// RUN:     -ferror-limit=10 \
-// RUN:     -fmsc-version=1800 \
-// RUN:     -fno-strict-aliasing \
-// RUN:     -fstrict-aliasing \
-// RUN:     -mllvm -disable-llvm-optzns \
-// RUN:     -Wunused-variables \
-// RUN:     /Zs -- %s 2>&1
+// Use -fno-rtti by default.
+// RUN: %clang_cl /c -### -- %s 2>&1 | FileCheck -check-prefix=NoRTTI %s
+// NoRTTI: "-fno-rtti"
+// RUN: %clang_cl /c /GR -### -- %s 2>&1 | FileCheck -check-prefix=RTTI %s
+// RTTI-NOT: "-fno-rtti"
 
 
 void f() { }

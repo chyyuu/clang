@@ -10,13 +10,11 @@
 #include "clang/Frontend/LogDiagnosticPrinter.h"
 #include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/FileManager.h"
-#include "clang/Basic/PlistSupport.h"
 #include "clang/Basic/SourceManager.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace clang;
-using namespace markup;
 
 LogDiagnosticPrinter::LogDiagnosticPrinter(raw_ostream &os,
                                            DiagnosticOptions *diags,
@@ -42,34 +40,19 @@ static StringRef getLevelName(DiagnosticsEngine::Level Level) {
   llvm_unreachable("Invalid DiagnosticsEngine level!");
 }
 
-void
-LogDiagnosticPrinter::EmitDiagEntry(llvm::raw_ostream &OS,
-                                    const LogDiagnosticPrinter::DiagEntry &DE) {
-  OS << "    <dict>\n";
-  OS << "      <key>level</key>\n"
-     << "      ";
-  EmitString(OS, getLevelName(DE.DiagnosticLevel)) << '\n';
-  if (!DE.Filename.empty()) {
-    OS << "      <key>filename</key>\n"
-       << "      ";
-    EmitString(OS, DE.Filename) << '\n';
+// Escape XML characters inside the raw string.
+static void emitString(llvm::raw_svector_ostream &OS, const StringRef Raw) {
+  for (StringRef::iterator I = Raw.begin(), E = Raw.end(); I != E; ++I) {
+    char c = *I;
+    switch (c) {
+    default:   OS << c; break;
+    case '&':  OS << "&amp;"; break;
+    case '<':  OS << "&lt;"; break;
+    case '>':  OS << "&gt;"; break;
+    case '\'': OS << "&apos;"; break;
+    case '\"': OS << "&quot;"; break;
+    }
   }
-  if (DE.Line != 0) {
-    OS << "      <key>line</key>\n"
-       << "      ";
-    EmitInteger(OS, DE.Line) << '\n';
-  }
-  if (DE.Column != 0) {
-    OS << "      <key>column</key>\n"
-       << "      ";
-    EmitInteger(OS, DE.Column) << '\n';
-  }
-  if (!DE.Message.empty()) {
-    OS << "      <key>message</key>\n"
-       << "      ";
-    EmitString(OS, DE.Message) << '\n';
-  }
-  OS << "    </dict>\n";
 }
 
 void LogDiagnosticPrinter::EndSourceFile() {
@@ -89,18 +72,48 @@ void LogDiagnosticPrinter::EndSourceFile() {
   OS << "<dict>\n";
   if (!MainFilename.empty()) {
     OS << "  <key>main-file</key>\n"
-       << "  ";
-    EmitString(OS, MainFilename) << '\n';
+       << "  <string>";
+    emitString(OS, MainFilename);
+    OS << "</string>\n";
   }
   if (!DwarfDebugFlags.empty()) {
     OS << "  <key>dwarf-debug-flags</key>\n"
-       << "  ";
-    EmitString(OS, DwarfDebugFlags) << '\n';
+       << "  <string>";
+    emitString(OS, DwarfDebugFlags);
+    OS << "</string>\n";
   }
   OS << "  <key>diagnostics</key>\n";
   OS << "  <array>\n";
-  for (auto &DE : Entries)
-    EmitDiagEntry(OS, DE);
+  for (unsigned i = 0, e = Entries.size(); i != e; ++i) {
+    DiagEntry &DE = Entries[i];
+
+    OS << "    <dict>\n";
+    OS << "      <key>level</key>\n"
+       << "      <string>";
+    emitString(OS, getLevelName(DE.DiagnosticLevel));
+    OS << "</string>\n";
+    if (!DE.Filename.empty()) {
+      OS << "      <key>filename</key>\n"
+         << "      <string>";
+      emitString(OS, DE.Filename);
+      OS << "</string>\n";
+    }
+    if (DE.Line != 0) {
+      OS << "      <key>line</key>\n"
+         << "      <integer>" << DE.Line << "</integer>\n";
+    }
+    if (DE.Column != 0) {
+      OS << "      <key>column</key>\n"
+         << "      <integer>" << DE.Column << "</integer>\n";
+    }
+    if (!DE.Message.empty()) {
+      OS << "      <key>message</key>\n"
+         << "      <string>";
+      emitString(OS, DE.Message);
+      OS << "</string>\n";
+    }
+    OS << "    </dict>\n";
+  }
   OS << "  </array>\n";
   OS << "</dict>\n";
 

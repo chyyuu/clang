@@ -335,12 +335,13 @@ private:
   /// \brief Second string argument for the delayed diagnostic.
   std::string DelayedDiagArg2;
 
-  /// \brief Optional flag value.
+  /// \brief Flag name value.
   ///
-  /// Some flags accept values, for instance: -Wframe-larger-than=<value> and
-  /// -Rpass=<value>. The content of this string is emitted after the flag name
-  /// and '='.
-  std::string FlagValue;
+  /// Some flags accept values. For instance, -Wframe-larger-than or -Rpass.
+  /// When reporting a diagnostic with those flags, it is useful to also
+  /// report the value that actually triggered the flag. The content of this
+  /// string is a value to be emitted after the flag name.
+  std::string FlagNameValue;
 
 public:
   explicit DiagnosticsEngine(
@@ -702,8 +703,11 @@ public:
   /// \brief Clear out the current diagnostic.
   void Clear() { CurDiagID = ~0U; }
 
-  /// \brief Return the value associated with this diagnostic flag.
-  StringRef getFlagValue() const { return FlagValue; }
+  /// \brief Return the value associated to this diagnostic flag.
+  StringRef getFlagNameValue() const { return StringRef(FlagNameValue); }
+
+  /// \brief Set the value associated to this diagnostic flag.
+  void setFlagNameValue(StringRef V) { FlagNameValue = V; }
 
 private:
   /// \brief Report the delayed diagnostic.
@@ -993,7 +997,7 @@ public:
     DiagObj->DiagFixItHints.push_back(Hint);
   }
 
-  void addFlagValue(StringRef V) const { DiagObj->FlagValue = V; }
+  void addFlagValue(StringRef V) const { DiagObj->setFlagNameValue(V); }
 };
 
 struct AddFlagValue {
@@ -1104,7 +1108,7 @@ inline DiagnosticBuilder DiagnosticsEngine::Report(SourceLocation Loc,
   assert(CurDiagID == ~0U && "Multiple diagnostics in flight at once!");
   CurDiagLoc = Loc;
   CurDiagID = DiagID;
-  FlagValue.clear();
+  FlagNameValue.clear();
   return DiagnosticBuilder(this);
 }
 

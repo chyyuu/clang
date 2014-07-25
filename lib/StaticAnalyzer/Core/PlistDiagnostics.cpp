@@ -173,8 +173,8 @@ static void ReportEvent(raw_ostream &o, const PathDiagnosticPiece& P,
   }
   
   // Output the call depth.
-  Indent(o, indent) << "<key>depth</key>";
-  EmitInteger(o, depth) << '\n';
+  Indent(o, indent) << "<key>depth</key>"
+                    << "<integer>" << depth << "</integer>\n";
 
   // Output the text.
   assert(!P.getString().empty());
@@ -311,7 +311,7 @@ void PlistDiagnostics::FlushDiagnosticsImpl(
 
       for (PathPieces::const_iterator I = path.begin(), E = path.end(); I != E;
            ++I) {
-        const PathDiagnosticPiece *piece = I->get();
+        const PathDiagnosticPiece *piece = I->getPtr();
         AddFID(FM, Fids, *SM, piece->getLocation().asLocation());
         ArrayRef<SourceRange> Ranges = piece->getRanges();
         for (ArrayRef<SourceRange>::iterator I = Ranges.begin(),
@@ -345,7 +345,8 @@ void PlistDiagnostics::FlushDiagnosticsImpl(
     return;
   }
 
-  EmitPlistHeader(o);
+  // Write the plist header.
+  o << PlistHeader;
 
   // Write the root object: a <dict> containing...
   //  - "clang_version", the string representation of clang version
@@ -357,8 +358,11 @@ void PlistDiagnostics::FlushDiagnosticsImpl(
   o << " <key>files</key>\n"
        " <array>\n";
 
-  for (FileID FID : Fids)
-    EmitString(o << "  ", SM->getFileEntryForID(FID)->getName()) << '\n';
+  for (SmallVectorImpl<FileID>::iterator I=Fids.begin(), E=Fids.end();
+       I!=E; ++I) {
+    o << "  ";
+    EmitString(o, SM->getFileEntryForID(*I)->getName()) << '\n';
+  }
 
   o << " </array>\n"
        " <key>diagnostics</key>\n"

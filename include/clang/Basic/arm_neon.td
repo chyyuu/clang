@@ -87,7 +87,7 @@ def call;
 def cast;
 // bitcast - Same as "cast", except a reinterpret-cast is produced:
 //             (bitcast "T", $p0) -> "*(T*)&__p0".
-//           The VAL argument is saved to a temporary so it can be used
+//           The VAL argument is saved to a temprary so it can be used
 //           as an l-value.
 def bitcast;
 // dup - Take a scalar argument and create a vector by duplicating it into
@@ -261,7 +261,6 @@ class Inst <string n, string p, string t, Operation o> {
 
   Operation Operation = o;
   bit CartesianProductOfTypes = 0;
-  bit BigEndianSafe = 0;
   bit isShift = 0;
   bit isScalarShift = 0;
   bit isScalarNarrowShift = 0;
@@ -655,9 +654,7 @@ def VSET_LANE : IInst<"vset_lane", "dsdi",
 
 ////////////////////////////////////////////////////////////////////////////////
 // E.3.18 Initialize a vector from bit pattern
-def VCREATE : NoTestOpInst<"vcreate", "dl", "csihfUcUsUiUlPcPsl", OP_CAST> {
-  let BigEndianSafe = 1;
-}
+def VCREATE : NoTestOpInst<"vcreate", "dl", "csihfUcUsUiUlPcPsl", OP_CAST>;
 
 ////////////////////////////////////////////////////////////////////////////////
 // E.3.19 Set all lanes to same value
@@ -794,7 +791,6 @@ def VREINTERPRET
          "csilUcUsUiUlhfPcPsQcQsQiQlQUcQUsQUiQUlQhQfQPcQPs", OP_REINT> {
   let CartesianProductOfTypes = 1;
   let ArchGuard = "!defined(__aarch64__)";
-  let BigEndianSafe = 1;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1096,9 +1092,7 @@ def COMBINE : NoTestOpInst<"vcombine", "kdd", "dPl", OP_CONC>;
 
 ////////////////////////////////////////////////////////////////////////////////
 //Initialize a vector from bit pattern
-def CREATE : NoTestOpInst<"vcreate", "dl", "dPl", OP_CAST> {
-  let BigEndianSafe = 1;
-}
+def CREATE : NoTestOpInst<"vcreate", "dl", "dPl", OP_CAST>;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1262,7 +1256,6 @@ def VVREINTERPRET
   : NoTestOpInst<"vreinterpret", "dd",
        "csilUcUsUiUlhfdPcPsPlQcQsQiQlQUcQUsQUiQUlQhQfQdQPcQPsQPlQPk", OP_REINT> {
   let CartesianProductOfTypes = 1;
-  let BigEndianSafe = 1;
   let ArchGuard = "__ARM_ARCH >= 8 && defined(__aarch64__)";
 }
 

@@ -32,7 +32,7 @@ using namespace llvm::opt;
 CompilerInvocation *
 clang::createInvocationFromCommandLine(ArrayRef<const char *> ArgList,
                             IntrusiveRefCntPtr<DiagnosticsEngine> Diags) {
-  if (!Diags.get()) {
+  if (!Diags.getPtr()) {
     // No diagnostics engine was provided, so create our own diagnostics object
     // with the default options.
     Diags = CompilerInstance::createDiagnostics(new DiagnosticOptions);
